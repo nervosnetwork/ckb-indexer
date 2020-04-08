@@ -1,0 +1,22 @@
+[package]
+name = "ckb-indexer"
+version = "0.1.0"
+authors = ["quake <quake.wang@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rocksdb = "0.13"
+ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.31.0-pre1" }
+ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.31.0-pre1" }
+jsonrpc-core = "14.0"
+jsonrpc-core-client = { version = "14.0", features = ["http"] }
+jsonrpc-derive = "14.0"
+hyper = "0.12"
+futures = "0.1"
+ctrlc = { version = "3.1", features = ["termination"] }
+
+[dev-dependencies]
+tempfile = "3.0"
+rand = "0.6"
