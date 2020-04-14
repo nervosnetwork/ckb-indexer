@@ -2,6 +2,7 @@ use super::{Batch, Error, IteratorDirection, IteratorItem, Store};
 use rocksdb::{Direction, IteratorMode, WriteBatch, DB};
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct RocksdbStore {
     db: Arc<DB>,
 }

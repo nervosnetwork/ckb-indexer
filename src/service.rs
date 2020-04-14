@@ -1,77 +1,359 @@
-use crate::indexer::Indexer;
-use crate::store::{RocksdbStore, Store};
-use ckb_jsonrpc_types::{BlockNumber, BlockView, HeaderView};
-use ckb_types::H256;
+use crate::indexer::{Indexer, Key, KeyPrefix, Value};
+use crate::store::{IteratorDirection, Store};
+use ckb_jsonrpc_types::{BlockNumber, BlockView, CellOutput, JsonBytes, OutPoint, Script, Uint32};
+use ckb_types::{packed, prelude::*, H256};
 use futures::future::Future;
-use jsonrpc_core::Result;
+use jsonrpc_core::{Error, IoHandler, Result};
 use jsonrpc_derive::rpc;
+use jsonrpc_http_server::{Server, ServerBuilder};
+use jsonrpc_server_utils::cors::AccessControlAllowOrigin;
+use jsonrpc_server_utils::hosts::DomainsValidation;
+use log::info;
+use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
+use std::net::ToSocketAddrs;
 use std::thread;
 use std::time::Duration;
 
-pub struct Service {
-    indexer: Indexer<RocksdbStore>,
+pub struct Service<S> {
+    store: S,
     poll_interval: Duration,
+    listen_address: String,
 }
 
-impl Service {
-    pub fn new(store_path: &str, poll_interval: Duration) -> Self {
-        let indexer = Indexer::new(RocksdbStore::new(store_path), 100);
-        // let client = connect(rpc_url).wait().expect("connect");
+impl<S: Store + Clone + Send + Sync + 'static> Service<S> {
+    pub fn new(store_path: &str, listen_address: &str, poll_interval: Duration) -> Self {
+        let store = S::new(store_path);
         Self {
-            indexer,
+            store,
+            listen_address: listen_address.to_string(),
             poll_interval,
         }
     }
 
-    // pub fn start<S: ToString>(self, thread_name: Option<S>) {
-    //     let mut thread_builder = thread::Builder::new();
-    //     if let Some(name) = thread_name {
-    //         thread_builder = thread_builder.name(name.to_string());
-    //     }
+    pub fn start(&self) -> Server {
+        let mut io_handler = IoHandler::new();
+        let rpc_impl = IndexerRpcImpl {
+            store: self.store.clone(),
+        };
+        io_handler.extend_with(rpc_impl.to_delegate());
 
-    //     thread_builder
-    //         .spawn(move || loop {
-    //             self.poll();
-    //         })
-    //         .expect("start service failed");
-    // }
+        ServerBuilder::new(io_handler)
+            .cors(DomainsValidation::AllowOnly(vec![
+                AccessControlAllowOrigin::Null,
+                AccessControlAllowOrigin::Any,
+            ]))
+            .health_api(("/ping", "ping"))
+            .start_http(
+                &self
+                    .listen_address
+                    .to_socket_addrs()
+                    .expect("config listen_address parsed")
+                    .next()
+                    .expect("config listen_address parsed"),
+            )
+            .expect("Start Jsonrpc HTTP service")
+    }
 
     pub fn poll(&self, rpc_client: gen_client::Client) {
+        let indexer = Indexer::new(self.store.clone(), 100, 1000);
         loop {
-            // TODO log error
-            if let Some((tip_number, tip_hash)) = self.indexer.tip().unwrap() {
+            if let Some((tip_number, tip_hash)) = indexer.tip().unwrap() {
                 if let Ok(Some(block)) = rpc_client
                     .get_block_by_number((tip_number + 1).into())
                     .wait()
                 {
                     let block: ckb_types::core::BlockView = block.into();
                     if block.parent_hash() == tip_hash {
-                        println!("append {:?}", block.number());
-                        self.indexer.append(&block).unwrap();
+                        info!("append {}, {}", block.number(), block.hash());
+                        indexer.append(&block).unwrap();
                     } else {
-                        println!("rollback");
-                        self.indexer.rollback().unwrap();
+                        info!("rollback {}, {}", tip_number, tip_hash);
+                        indexer.rollback().unwrap();
                     }
                 } else {
                     thread::sleep(self.poll_interval);
                 }
             } else {
                 if let Ok(Some(block)) = rpc_client.get_block_by_number(0u64.into()).wait() {
-                    self.indexer.append(&block.into()).unwrap();
+                    indexer.append(&block.into()).unwrap();
                 }
             }
         }
     }
 }
 
-#[rpc]
-pub trait Rpc {
-    #[rpc(name = "get_block")]
-    fn get_block(&self, _hash: H256) -> Result<Option<BlockView>>;
-
+#[rpc(client)]
+pub trait CkbRpc {
     #[rpc(name = "get_block_by_number")]
     fn get_block_by_number(&self, _number: BlockNumber) -> Result<Option<BlockView>>;
+}
 
-    #[rpc(name = "get_tip_header")]
-    fn get_tip_header(&self) -> Result<HeaderView>;
+#[rpc(server)]
+pub trait IndexerRpc {
+    #[rpc(name = "get_cells")]
+    fn get_cells(
+        &self,
+        search_key: SearchKey,
+        order: Order,
+        limit: Uint32,
+        after: Option<JsonBytes>,
+    ) -> Result<Pagination<Cell>>;
+
+    #[rpc(name = "get_transactions")]
+    fn get_transactions(
+        &self,
+        search_key: SearchKey,
+        order: Order,
+        limit: Uint32,
+        after: Option<JsonBytes>,
+    ) -> Result<Pagination<Tx>>;
+}
+
+#[derive(Deserialize)]
+pub struct SearchKey {
+    script: Script,
+    script_type: ScriptType,
+    args_len: Option<Uint32>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScriptType {
+    Lock,
+    Type,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Order {
+    Desc,
+    Asc,
+}
+
+#[derive(Serialize)]
+pub struct Cell {
+    output: CellOutput,
+    output_data: JsonBytes,
+    out_point: OutPoint,
+    block_number: BlockNumber,
+    tx_index: Uint32,
+}
+
+#[derive(Serialize)]
+pub struct Tx {
+    hash: H256,
+    block_number: BlockNumber,
+    tx_index: Uint32,
+    io_index: Uint32,
+    io_type: IOType,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IOType {
+    Input,
+    Output,
+}
+
+#[derive(Serialize)]
+pub struct Pagination<T> {
+    objects: Vec<T>,
+    last_cursor: JsonBytes,
+}
+
+struct IndexerRpcImpl<S> {
+    store: S,
+}
+
+impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
+    fn get_cells(
+        &self,
+        search_key: SearchKey,
+        order: Order,
+        limit: Uint32,
+        after_cursor: Option<JsonBytes>,
+    ) -> Result<Pagination<Cell>> {
+        let mut prefix = match search_key.script_type {
+            ScriptType::Lock => vec![KeyPrefix::CellLockScript as u8],
+            ScriptType::Type => vec![KeyPrefix::CellTypeScript as u8],
+        };
+        let script: packed::Script = search_key.script.into();
+        let args_len = search_key
+            .args_len
+            .map_or_else(|| script.args().len(), |args_len| args_len.value() as usize);
+        if args_len < script.args().len() {
+            return Err(Error::invalid_params(
+                "args_len should be greater than or equal to script.args.len",
+            ));
+        }
+        if args_len > u16::max_value() as usize {
+            return Err(Error::invalid_params("args_len should be less than 65535"));
+        }
+        prefix.extend_from_slice(script.code_hash().as_slice());
+        prefix.extend_from_slice(script.hash_type().as_slice());
+        prefix.extend_from_slice(&(args_len as u32).to_le_bytes());
+        prefix.extend_from_slice(&script.args().raw_data());
+
+        let remain_args_len = args_len - script.args().len();
+        let (from_key, direction) = match order {
+            Order::Asc => (
+                after_cursor
+                    .map_or_else(|| prefix.clone(), |json_bytes| json_bytes.as_bytes().into()),
+                IteratorDirection::Forward,
+            ),
+            Order::Desc => (
+                after_cursor.map_or_else(
+                    // 16 is BlockNumber + TxIndex + OutputIndex length
+                    || [prefix.clone(), vec![0xff; remain_args_len + 16]].concat(),
+                    |json_bytes| json_bytes.as_bytes().into(),
+                ),
+                IteratorDirection::Reverse,
+            ),
+        };
+
+        let iter = self
+            .store
+            .iter(&from_key, direction)
+            .expect("indexer store should be OK");
+
+        let kvs = iter
+            .take(limit.value() as usize)
+            .take_while(|(key, _value)| key.starts_with(&prefix))
+            .collect::<Vec<_>>();
+
+        let cells = kvs
+            .iter()
+            .map(|(key, value)| {
+                let tx_hash = packed::Byte32::from_slice(value).expect("stored tx hash");
+                let index =
+                    u32::from_be_bytes(key[key.len() - 4..].try_into().expect("stored index"));
+                let out_point = packed::OutPoint::new(tx_hash, index);
+                let (block_number, tx_index, output, output_data) = Value::parse_cell_value(
+                    &self
+                        .store
+                        .get(Key::OutPoint(&out_point).into_vec())
+                        .unwrap()
+                        .unwrap(),
+                );
+                Cell {
+                    output: output.into(),
+                    output_data: output_data.into(),
+                    out_point: out_point.into(),
+                    block_number: block_number.into(),
+                    tx_index: tx_index.into(),
+                }
+            })
+            .collect::<Vec<Cell>>();
+
+        let last_cursor = kvs.last().map_or_else(
+            || JsonBytes::default(),
+            |(last_key, _last_value)| JsonBytes::from_vec(last_key.clone().into()),
+        );
+
+        Ok(Pagination {
+            objects: cells,
+            last_cursor,
+        })
+    }
+
+    fn get_transactions(
+        &self,
+        search_key: SearchKey,
+        order: Order,
+        limit: Uint32,
+        after_cursor: Option<JsonBytes>,
+    ) -> Result<Pagination<Tx>> {
+        let mut prefix = match search_key.script_type {
+            ScriptType::Lock => vec![KeyPrefix::TxLockScript as u8],
+            ScriptType::Type => vec![KeyPrefix::TxTypeScript as u8],
+        };
+        let script: packed::Script = search_key.script.into();
+        let args_len = search_key
+            .args_len
+            .map_or_else(|| script.args().len(), |args_len| args_len.value() as usize);
+        if args_len < script.args().len() {
+            return Err(Error::invalid_params(
+                "args_len should be greater than or equal to script.args.len",
+            ));
+        }
+        if args_len > u16::max_value() as usize {
+            return Err(Error::invalid_params("args_len should be less than 65535"));
+        }
+        prefix.extend_from_slice(script.code_hash().as_slice());
+        prefix.extend_from_slice(script.hash_type().as_slice());
+        prefix.extend_from_slice(&(args_len as u32).to_le_bytes());
+        prefix.extend_from_slice(&script.args().raw_data());
+
+        let remain_args_len = args_len - script.args().len();
+        let (from_key, direction) = match order {
+            Order::Asc => (
+                after_cursor
+                    .map_or_else(|| prefix.clone(), |json_bytes| json_bytes.as_bytes().into()),
+                IteratorDirection::Forward,
+            ),
+            Order::Desc => (
+                after_cursor.map_or_else(
+                    // 17 is BlockNumber + TxIndex + IOIndex + IOType length
+                    || [prefix.clone(), vec![0xff; remain_args_len + 17]].concat(),
+                    |json_bytes| json_bytes.as_bytes().into(),
+                ),
+                IteratorDirection::Reverse,
+            ),
+        };
+
+        let iter = self
+            .store
+            .iter(&from_key, direction)
+            .expect("indexer store should be OK");
+        let kvs = iter
+            .take_while(|(key, _value)| key.starts_with(&prefix))
+            .take(limit.value() as usize)
+            .collect::<Vec<_>>();
+
+        let txs = kvs
+            .iter()
+            .map(|(key, value)| {
+                let tx_hash = packed::Byte32::from_slice(value).expect("stored tx hash");
+                let block_number = u64::from_be_bytes(
+                    key[key.len() - 17..key.len() - 9]
+                        .try_into()
+                        .expect("stored block_number"),
+                );
+                let tx_index = u32::from_be_bytes(
+                    key[key.len() - 9..key.len() - 5]
+                        .try_into()
+                        .expect("stored tx_index"),
+                );
+                let io_index = u32::from_be_bytes(
+                    key[key.len() - 5..key.len() - 1]
+                        .try_into()
+                        .expect("stored io_index"),
+                );
+                let io_type = if *key.last().expect("stored io_type") == 0 {
+                    IOType::Input
+                } else {
+                    IOType::Output
+                };
+
+                Tx {
+                    hash: tx_hash.unpack(),
+                    block_number: block_number.into(),
+                    tx_index: tx_index.into(),
+                    io_index: io_index.into(),
+                    io_type,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let last_cursor = kvs.last().map_or_else(
+            || JsonBytes::default(),
+            |(last_key, _last_value)| JsonBytes::from_vec(last_key.clone().into()),
+        );
+
+        Ok(Pagination {
+            objects: txs,
+            last_cursor,
+        })
+    }
 }

@@ -4,13 +4,16 @@ use ckb_types::{
     packed::{Byte32, Bytes, CellOutput, OutPoint, Script},
     prelude::*,
 };
-use std::convert::TryInto;
 use std::collections::HashMap;
+use std::convert::TryInto;
 
 pub type TxIndex = u32;
 pub type OutputIndex = u32;
 pub type IOIndex = u32;
-pub type IOFlag = bool;
+pub enum IOType {
+    Input,
+    Output,
+}
 // Script serialized slice body offset: (1 total size + 3 items offset) * 4 bytes
 pub const SCRIPT_SERIALIZE_OFFSET: usize = 16;
 
@@ -32,8 +35,8 @@ pub enum Key<'a> {
     ConsumedOutPoint(BlockNumber, &'a OutPoint),
     CellLockScript(&'a Script, BlockNumber, TxIndex, OutputIndex),
     CellTypeScript(&'a Script, BlockNumber, TxIndex, OutputIndex),
-    TxLockScript(&'a Script, BlockNumber, TxIndex, IOIndex, IOFlag),
-    TxTypeScript(&'a Script, BlockNumber, TxIndex, IOIndex, IOFlag),
+    TxLockScript(&'a Script, BlockNumber, TxIndex, IOIndex, IOType),
+    TxTypeScript(&'a Script, BlockNumber, TxIndex, IOIndex, IOType),
     TxHash(&'a Byte32),
     Header(BlockNumber, &'a Byte32),
 }
@@ -91,21 +94,27 @@ impl<'a> Into<Vec<u8>> for Key<'a> {
                 encoded.extend_from_slice(&tx_index.to_be_bytes());
                 encoded.extend_from_slice(&output_index.to_be_bytes());
             }
-            Key::TxLockScript(script, block_number, tx_index, io_index, io_flag) => {
+            Key::TxLockScript(script, block_number, tx_index, io_index, io_type) => {
                 encoded.push(KeyPrefix::TxLockScript as u8);
                 encoded.extend_from_slice(&script.as_slice()[SCRIPT_SERIALIZE_OFFSET..]);
                 encoded.extend_from_slice(&block_number.to_be_bytes());
                 encoded.extend_from_slice(&tx_index.to_be_bytes());
                 encoded.extend_from_slice(&io_index.to_be_bytes());
-                encoded.push(if io_flag { 0 } else { 1 });
+                match io_type {
+                    IOType::Input => encoded.push(0),
+                    IOType::Output => encoded.push(1),
+                }
             }
-            Key::TxTypeScript(script, block_number, tx_index, io_index, io_flag) => {
+            Key::TxTypeScript(script, block_number, tx_index, io_index, io_type) => {
                 encoded.push(KeyPrefix::TxTypeScript as u8);
                 encoded.extend_from_slice(&script.as_slice()[SCRIPT_SERIALIZE_OFFSET..]);
                 encoded.extend_from_slice(&block_number.to_be_bytes());
                 encoded.extend_from_slice(&tx_index.to_be_bytes());
                 encoded.extend_from_slice(&io_index.to_be_bytes());
-                encoded.push(if io_flag { 0 } else { 1 });
+                match io_type {
+                    IOType::Input => encoded.push(0),
+                    IOType::Output => encoded.push(1),
+                }
             }
             Key::TxHash(tx_hash) => {
                 encoded.push(KeyPrefix::TxHash as u8);
@@ -151,7 +160,7 @@ impl<'a> Into<Vec<u8>> for Value<'a> {
 }
 
 impl<'a> Value<'a> {
-    fn parse_cell_value(slice: &[u8]) -> (BlockNumber, TxIndex, CellOutput, Bytes) {
+    pub fn parse_cell_value(slice: &[u8]) -> (BlockNumber, TxIndex, CellOutput, Bytes) {
         let block_number =
             BlockNumber::from_le_bytes(slice[0..8].try_into().expect("stored cell block_number"));
         let tx_index =
@@ -165,7 +174,7 @@ impl<'a> Value<'a> {
         (block_number, tx_index, output, output_data)
     }
 
-    fn parse_transactions_value(slice: &[u8]) -> Vec<(Byte32, u32)> {
+    pub fn parse_transactions_value(slice: &[u8]) -> Vec<(Byte32, u32)> {
         slice
             .chunks_exact(36) // hash(32) + outputs_len(4)
             .map(|s| {
@@ -181,14 +190,19 @@ impl<'a> Value<'a> {
 
 pub struct Indexer<S> {
     store: S,
-    // heep N blocks to keep for rollback and forking, for example,
+    // number of blocks to keep for rollback and forking, for example:
     // keep_num: 100, current tip: 321, will prune ConsumedOutPoint / TxHash kv pair whiches block_number <= 221
-    keep_num: BlockNumber,
+    keep_num: u64,
+    prune_interval: u64,
 }
 
 impl<S> Indexer<S> {
-    pub fn new(store: S, keep_num: BlockNumber) -> Self {
-        Self { store, keep_num }
+    pub fn new(store: S, keep_num: u64, prune_interval: u64) -> Self {
+        Self {
+            store,
+            keep_num,
+            prune_interval,
+        }
     }
 }
 
@@ -266,7 +280,7 @@ where
                             block_number,
                             tx_index,
                             input_index,
-                            true,
+                            IOType::Input,
                         ),
                         Value::TxHash(&tx_hash),
                     )?;
@@ -281,7 +295,13 @@ where
                             .into_vec(),
                         )?;
                         batch.put_kv(
-                            Key::TxTypeScript(&script, block_number, tx_index, input_index, true),
+                            Key::TxTypeScript(
+                                &script,
+                                block_number,
+                                tx_index,
+                                input_index,
+                                IOType::Input,
+                            ),
                             Value::TxHash(&tx_hash),
                         )?;
                     };
@@ -307,7 +327,13 @@ where
                     Value::TxHash(&tx_hash),
                 )?;
                 batch.put_kv(
-                    Key::TxLockScript(&output.lock(), block_number, tx_index, output_index, false),
+                    Key::TxLockScript(
+                        &output.lock(),
+                        block_number,
+                        tx_index,
+                        output_index,
+                        IOType::Output,
+                    ),
                     Value::TxHash(&tx_hash),
                 )?;
                 if let Some(script) = output.type_().to_opt() {
@@ -316,7 +342,13 @@ where
                         Value::TxHash(&tx_hash),
                     )?;
                     batch.put_kv(
-                        Key::TxTypeScript(&script, block_number, tx_index, output_index, false),
+                        Key::TxTypeScript(
+                            &script,
+                            block_number,
+                            tx_index,
+                            output_index,
+                            IOType::Output,
+                        ),
                         Value::TxHash(&tx_hash),
                     )?;
                 }
@@ -340,7 +372,7 @@ where
 
         batch.commit()?;
 
-        if block_number % 1000 == 0 {
+        if block_number % self.prune_interval == 0 {
             self.prune()?;
         }
         Ok(())
@@ -383,7 +415,7 @@ where
                             block_number,
                             tx_index,
                             output_index,
-                            false,
+                            IOType::Output,
                         )
                         .into_vec(),
                     )?;
@@ -393,8 +425,14 @@ where
                                 .into_vec(),
                         )?;
                         batch.delete(
-                            Key::TxTypeScript(&script, block_number, tx_index, output_index, false)
-                                .into_vec(),
+                            Key::TxTypeScript(
+                                &script,
+                                block_number,
+                                tx_index,
+                                output_index,
+                                IOType::Output,
+                            )
+                            .into_vec(),
                         )?;
                     };
                     batch.delete(out_point_key)?;
@@ -445,7 +483,7 @@ where
                                 block_number,
                                 tx_index,
                                 input_index,
-                                true,
+                                IOType::Input,
                             )
                             .into_vec(),
                         )?;
@@ -465,7 +503,7 @@ where
                                     block_number,
                                     tx_index,
                                     input_index,
-                                    true,
+                                    IOType::Input,
                                 )
                                 .into_vec(),
                             )?;
@@ -576,7 +614,7 @@ where
             .collect())
     }
 
-    pub fn report(&self) -> Result<(), Error>{
+    pub fn report(&self) -> Result<(), Error> {
         let iter = self.store.iter(&[], IteratorDirection::Forward)?;
         let mut statistics: HashMap<u8, (usize, usize, usize)> = HashMap::new();
         for (key, value) in iter {
@@ -621,7 +659,7 @@ mod tests {
     fn new_indexer<S: Store>(prefix: &str) -> Indexer<S> {
         let tmp_dir = tempfile::Builder::new().prefix(prefix).tempdir().unwrap();
         let store = S::new(tmp_dir.path().to_str().unwrap());
-        Indexer::new(store, 10)
+        Indexer::new(store, 10, 1)
     }
 
     #[test]
