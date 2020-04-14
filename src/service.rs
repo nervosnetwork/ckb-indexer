@@ -5,12 +5,14 @@ use ckb_types::H256;
 use futures::future::Future;
 use jsonrpc_core::Result;
 use jsonrpc_derive::rpc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
 pub struct Service {
     indexer: Indexer<RocksdbStore>,
     poll_interval: Duration,
+    running: AtomicBool,
 }
 
 impl Service {
@@ -20,6 +22,7 @@ impl Service {
         Self {
             indexer,
             poll_interval,
+            running: AtomicBool::new(false),
         }
     }
 
@@ -37,7 +40,11 @@ impl Service {
     // }
 
     pub fn poll(&self, rpc_client: gen_client::Client) {
+        self.running.store(true, Ordering::Release);
         loop {
+            if !self.running.load(Ordering::Acquire) {
+                break;
+            }
             // TODO log error
             if let Some((tip_number, tip_hash)) = self.indexer.tip().unwrap() {
                 if let Ok(Some(block)) = rpc_client
