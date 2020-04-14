@@ -142,7 +142,7 @@ pub struct Cell {
 
 #[derive(Serialize)]
 pub struct Tx {
-    hash: H256,
+    tx_hash: H256,
     block_number: BlockNumber,
     tx_index: Uint32,
     io_index: Uint32,
@@ -337,7 +337,7 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
                 };
 
                 Tx {
-                    hash: tx_hash.unpack(),
+                    tx_hash: tx_hash.unpack(),
                     block_number: block_number.into(),
                     tx_index: tx_index.into(),
                     io_index: io_index.into(),
