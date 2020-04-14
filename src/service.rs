@@ -48,7 +48,10 @@ impl Service {
     }
 
     pub fn poll(&self, rpc_client: gen_client::Client) {
-        self.running.store(true, Ordering::Release);
+        // Only one thread can poll for new changes simultaneously.
+        if self.running.compare_and_swap(false, true, Ordering::AcqRel) {
+            return;
+        }
         loop {
             if !self.running.load(Ordering::Acquire) {
                 break;
