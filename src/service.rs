@@ -39,6 +39,10 @@ impl Service {
     //         .expect("start service failed");
     // }
 
+    pub fn running(&self) -> bool {
+        self.running.load(Ordering::Acquire)
+    }
+
     pub fn poll(&self, rpc_client: gen_client::Client) {
         self.running.store(true, Ordering::Release);
         loop {
