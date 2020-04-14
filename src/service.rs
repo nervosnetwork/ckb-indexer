@@ -46,10 +46,10 @@ impl Service {
                 {
                     let block: ckb_types::core::BlockView = block.into();
                     if block.parent_hash() == tip_hash {
-                        println!("append {:?}", block.number());
+                        info!("append {:?}", block.number());
                         self.indexer.append(&block).unwrap();
                     } else {
-                        println!("rollback");
+                        info!("rollback");
                         self.indexer.rollback().unwrap();
                     }
                 } else {
