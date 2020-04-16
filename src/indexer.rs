@@ -188,6 +188,14 @@ impl<'a> Value<'a> {
     }
 }
 
+pub struct DetailedLiveCell {
+    pub block_number: BlockNumber,
+    pub block_hash: Byte32,
+    pub tx_index: TxIndex,
+    pub cell_output: CellOutput,
+    pub cell_data: Bytes,
+}
+
 pub struct Indexer<S> {
     store: S,
     // number of blocks to keep for rollback and forking, for example:
@@ -642,6 +650,45 @@ where
             .take_while(|(key, _)| key.starts_with(&start_key))
             .map(|(_key, value)| Byte32::from_slice(&value).expect("stored tx hash"))
             .collect())
+    }
+
+    /// Given an OutPoint representing a live cell, returns the following components
+    /// related to the live cell:
+    /// * CellOutput
+    /// * Cell data
+    /// * Block hash in which the cell is created
+    pub fn get_detailed_live_cell(
+        &self,
+        out_point: &OutPoint,
+    ) -> Result<Option<DetailedLiveCell>, Error> {
+        let key_vec = Key::OutPoint(&out_point).into_vec();
+        let (block_number, tx_index, cell_output, cell_data) = match self.store.get(&key_vec)? {
+            Some(stored_cell) => Value::parse_cell_value(&stored_cell),
+            None => return Ok(None),
+        };
+        let mut header_start_key = vec![KeyPrefix::Header as u8];
+        header_start_key.extend_from_slice(&block_number.to_be_bytes());
+        let mut iter = self
+            .store
+            .iter(&header_start_key, IteratorDirection::Forward)?;
+        let block_hash = match iter.next() {
+            Some((key, _)) => {
+                if key.starts_with(&header_start_key) {
+                    let start = std::mem::size_of::<BlockNumber>() + 1;
+                    Byte32::from_slice(&key[start..start + 32]).expect("stored key header hash")
+                } else {
+                    return Ok(None);
+                }
+            }
+            None => return Ok(None),
+        };
+        Ok(Some(DetailedLiveCell {
+            block_number,
+            block_hash,
+            tx_index,
+            cell_output,
+            cell_data,
+        }))
     }
 
     pub fn report(&self) -> Result<(), Error> {
