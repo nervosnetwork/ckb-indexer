@@ -188,6 +188,14 @@ impl<'a> Value<'a> {
     }
 }
 
+pub struct DetailedLiveCell {
+    pub block_number: BlockNumber,
+    pub block_hash: Byte32,
+    pub tx_index: TxIndex,
+    pub cell_output: CellOutput,
+    pub cell_data: Bytes,
+}
+
 pub struct Indexer<S> {
     store: S,
     // number of blocks to keep for rollback and forking, for example:
@@ -652,9 +660,9 @@ where
     pub fn get_detailed_live_cell(
         &self,
         out_point: &OutPoint,
-    ) -> Result<Option<(CellOutput, Bytes, Byte32)>, Error> {
+    ) -> Result<Option<DetailedLiveCell>, Error> {
         let key_vec = Key::OutPoint(&out_point).into_vec();
-        let (block_number, _tx_index, output, output_data) = match self.store.get(&key_vec)? {
+        let (block_number, tx_index, cell_output, cell_data) = match self.store.get(&key_vec)? {
             Some(stored_cell) => Value::parse_cell_value(&stored_cell),
             None => return Ok(None),
         };
@@ -674,7 +682,13 @@ where
             }
             None => return Ok(None),
         };
-        Ok(Some((output, output_data, block_hash)))
+        Ok(Some(DetailedLiveCell {
+            block_number,
+            block_hash,
+            tx_index,
+            cell_output,
+            cell_data,
+        }))
     }
 
     pub fn report(&self) -> Result<(), Error> {
