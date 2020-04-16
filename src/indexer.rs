@@ -644,6 +644,39 @@ where
             .collect())
     }
 
+    /// Given an OutPoint representing a live cell, returns the following components
+    /// related to the live cell:
+    /// * CellOutput
+    /// * Cell data
+    /// * Block hash in which the cell is created
+    pub fn get_detailed_live_cell(
+        &self,
+        out_point: &OutPoint,
+    ) -> Result<Option<(CellOutput, Bytes, Byte32)>, Error> {
+        let key_vec = Key::OutPoint(&out_point).into_vec();
+        let (block_number, _tx_index, output, output_data) = match self.store.get(&key_vec)? {
+            Some(stored_cell) => Value::parse_cell_value(&stored_cell),
+            None => return Ok(None),
+        };
+        let mut header_start_key = vec![KeyPrefix::Header as u8];
+        header_start_key.extend_from_slice(&block_number.to_be_bytes());
+        let mut iter = self
+            .store
+            .iter(&header_start_key, IteratorDirection::Forward)?;
+        let block_hash = match iter.next() {
+            Some((key, _)) => {
+                if key.starts_with(&header_start_key) {
+                    let start = std::mem::size_of::<BlockNumber>() + 1;
+                    Byte32::from_slice(&key[start..start + 32]).expect("stored key header hash")
+                } else {
+                    return Ok(None);
+                }
+            }
+            None => return Ok(None),
+        };
+        Ok(Some((output, output_data, block_hash)))
+    }
+
     pub fn report(&self) -> Result<(), Error> {
         let iter = self.store.iter(&[], IteratorDirection::Forward)?;
         let mut statistics: HashMap<u8, (usize, usize, usize)> = HashMap::new();
