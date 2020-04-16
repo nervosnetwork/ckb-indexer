@@ -586,8 +586,23 @@ where
         &self,
         lock_script: &Script,
     ) -> Result<Vec<OutPoint>, Error> {
-        let mut start_key = vec![KeyPrefix::CellLockScript as u8];
-        start_key.extend_from_slice(&lock_script.as_slice()[SCRIPT_SERIALIZE_OFFSET..]);
+        self.get_live_cells_by_script(lock_script, KeyPrefix::CellLockScript)
+    }
+
+    pub fn get_live_cells_by_type_script(
+        &self,
+        type_script: &Script,
+    ) -> Result<Vec<OutPoint>, Error> {
+        self.get_live_cells_by_script(type_script, KeyPrefix::CellTypeScript)
+    }
+
+    fn get_live_cells_by_script(
+        &self,
+        script: &Script,
+        prefix: KeyPrefix,
+    ) -> Result<Vec<OutPoint>, Error> {
+        let mut start_key = vec![prefix as u8];
+        start_key.extend_from_slice(&script.as_slice()[SCRIPT_SERIALIZE_OFFSET..]);
         let iter = self.store.iter(&start_key, IteratorDirection::Forward)?;
         Ok(iter
             .take_while(|(key, _)| key.starts_with(&start_key))
@@ -605,8 +620,23 @@ where
         &self,
         lock_script: &Script,
     ) -> Result<Vec<Byte32>, Error> {
-        let mut start_key = vec![KeyPrefix::TxLockScript as u8];
-        start_key.extend_from_slice(&lock_script.as_slice()[SCRIPT_SERIALIZE_OFFSET..]);
+        self.get_transactions_by_script(lock_script, KeyPrefix::TxLockScript)
+    }
+
+    pub fn get_transactions_by_type_script(
+        &self,
+        type_script: &Script,
+    ) -> Result<Vec<Byte32>, Error> {
+        self.get_transactions_by_script(type_script, KeyPrefix::TxTypeScript)
+    }
+
+    fn get_transactions_by_script(
+        &self,
+        script: &Script,
+        prefix: KeyPrefix,
+    ) -> Result<Vec<Byte32>, Error> {
+        let mut start_key = vec![prefix as u8];
+        start_key.extend_from_slice(&script.as_slice()[SCRIPT_SERIALIZE_OFFSET..]);
         let iter = self.store.iter(&start_key, IteratorDirection::Forward)?;
         Ok(iter
             .take_while(|(key, _)| key.starts_with(&start_key))
