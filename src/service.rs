@@ -196,26 +196,33 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
         prefix.extend_from_slice(&script.args().raw_data());
 
         let remain_args_len = args_len - script.args().len();
-        let (from_key, direction) = match order {
-            Order::Asc => (
-                after_cursor
-                    .map_or_else(|| prefix.clone(), |json_bytes| json_bytes.as_bytes().into()),
-                IteratorDirection::Forward,
-            ),
-            Order::Desc => (
-                after_cursor.map_or_else(
+        let (from_key, direction, skip) = match order {
+            Order::Asc => {
+                (after_cursor.map_or_else(
+                    || (prefix.clone(), IteratorDirection::Forward, 0),
+                    |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Forward, 1),
+                ))
+            }
+            Order::Desc => {
+                (after_cursor.map_or_else(
                     // 16 is BlockNumber + TxIndex + OutputIndex length
-                    || [prefix.clone(), vec![0xff; remain_args_len + 16]].concat(),
-                    |json_bytes| json_bytes.as_bytes().into(),
-                ),
-                IteratorDirection::Reverse,
-            ),
+                    || {
+                        (
+                            [prefix.clone(), vec![0xff; remain_args_len + 16]].concat(),
+                            IteratorDirection::Reverse,
+                            0,
+                        )
+                    },
+                    |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Reverse, 1),
+                ))
+            }
         };
 
         let iter = self
             .store
             .iter(&from_key, direction)
-            .expect("indexer store should be OK");
+            .expect("indexer store should be OK")
+            .skip(skip);
 
         let kvs = iter
             .take(limit.value() as usize)
@@ -286,26 +293,34 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
         prefix.extend_from_slice(&script.args().raw_data());
 
         let remain_args_len = args_len - script.args().len();
-        let (from_key, direction) = match order {
-            Order::Asc => (
-                after_cursor
-                    .map_or_else(|| prefix.clone(), |json_bytes| json_bytes.as_bytes().into()),
-                IteratorDirection::Forward,
-            ),
-            Order::Desc => (
-                after_cursor.map_or_else(
+        let (from_key, direction, skip) = match order {
+            Order::Asc => {
+                (after_cursor.map_or_else(
+                    || (prefix.clone(), IteratorDirection::Forward, 0),
+                    |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Forward, 1),
+                ))
+            }
+            Order::Desc => {
+                (after_cursor.map_or_else(
                     // 17 is BlockNumber + TxIndex + IOIndex + IOType length
-                    || [prefix.clone(), vec![0xff; remain_args_len + 17]].concat(),
-                    |json_bytes| json_bytes.as_bytes().into(),
-                ),
-                IteratorDirection::Reverse,
-            ),
+                    || {
+                        (
+                            [prefix.clone(), vec![0xff; remain_args_len + 17]].concat(),
+                            IteratorDirection::Reverse,
+                            0,
+                        )
+                    },
+                    |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Reverse, 1),
+                ))
+            }
         };
 
         let iter = self
             .store
             .iter(&from_key, direction)
-            .expect("indexer store should be OK");
+            .expect("indexer store should be OK")
+            .skip(skip);
+
         let kvs = iter
             .take_while(|(key, _value)| key.starts_with(&prefix))
             .take(limit.value() as usize)
