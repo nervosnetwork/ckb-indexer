@@ -1,9 +1,11 @@
+// use async_std::task;
 use ckb_indexer::service::Service;
 use ckb_indexer::store::RocksdbStore;
 use clap::{App, Arg};
 use futures::Future;
 use hyper::rt;
 use jsonrpc_core_client::transports::http;
+// use surf;
 
 fn main() {
     env_logger::Builder::from_default_env()
@@ -38,6 +40,12 @@ fn main() {
     );
     let rpc_server = service.start();
 
+    // task::block_on(async {
+    //     let uri = format!(
+    //         "http://{}",
+    //         matches.value_of("ckb_uri").unwrap_or("127.0.0.1:8114")
+    //     );
+    // });
     rt::run(rt::lazy(move || {
         let uri = format!(
             "http://{}",
