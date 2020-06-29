@@ -212,6 +212,10 @@ impl<S> Indexer<S> {
             prune_interval,
         }
     }
+
+    pub fn store(&self) -> &S {
+        &self.store
+    }
 }
 
 impl<S> Indexer<S>
