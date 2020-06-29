@@ -198,13 +198,13 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
         let remain_args_len = args_len - script.args().len();
         let (from_key, direction, skip) = match order {
             Order::Asc => {
-                (after_cursor.map_or_else(
+                after_cursor.map_or_else(
                     || (prefix.clone(), IteratorDirection::Forward, 0),
                     |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Forward, 1),
-                ))
+                )
             }
             Order::Desc => {
-                (after_cursor.map_or_else(
+                after_cursor.map_or_else(
                     // 16 is BlockNumber + TxIndex + OutputIndex length
                     || {
                         (
@@ -214,7 +214,7 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
                         )
                     },
                     |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Reverse, 1),
-                ))
+                )
             }
         };
 
@@ -295,13 +295,13 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
         let remain_args_len = args_len - script.args().len();
         let (from_key, direction, skip) = match order {
             Order::Asc => {
-                (after_cursor.map_or_else(
+                after_cursor.map_or_else(
                     || (prefix.clone(), IteratorDirection::Forward, 0),
                     |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Forward, 1),
-                ))
+                )
             }
             Order::Desc => {
-                (after_cursor.map_or_else(
+                after_cursor.map_or_else(
                     // 17 is BlockNumber + TxIndex + IOIndex + IOType length
                     || {
                         (
@@ -311,7 +311,7 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
                         )
                     },
                     |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Reverse, 1),
-                ))
+                )
             }
         };
 
