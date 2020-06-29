@@ -1,7 +1,7 @@
 use crate::indexer::{Indexer, Key, KeyPrefix, Value};
 use crate::store::{IteratorDirection, Store};
 use ckb_jsonrpc_types::{BlockNumber, BlockView, CellOutput, JsonBytes, OutPoint, Script, Uint32};
-use ckb_types::{packed, prelude::*, H256};
+use ckb_types::{core, packed, prelude::*, H256};
 use futures::future::Future;
 use jsonrpc_core::{Error, IoHandler, Result};
 use jsonrpc_derive::rpc;
@@ -91,6 +91,9 @@ pub trait CkbRpc {
 
 #[rpc(server)]
 pub trait IndexerRpc {
+    #[rpc(name = "get_tip")]
+    fn get_tip(&self) -> Result<Option<Tip>>;
+
     #[rpc(name = "get_cells")]
     fn get_cells(
         &self,
@@ -132,6 +135,12 @@ pub enum Order {
 }
 
 #[derive(Serialize)]
+pub struct Tip {
+    block_hash: H256,
+    block_number: BlockNumber,
+}
+
+#[derive(Serialize)]
 pub struct Cell {
     output: CellOutput,
     output_data: JsonBytes,
@@ -167,6 +176,22 @@ struct IndexerRpcImpl<S> {
 }
 
 impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
+    fn get_tip(&self) -> Result<Option<Tip>> {
+        let mut iter = self
+            .store
+            .iter(&[KeyPrefix::Header as u8 + 1], IteratorDirection::Reverse)
+            .expect("indexer store should be OK");
+        Ok(iter.next().map(|(key, _)| Tip {
+            block_hash: packed::Byte32::from_slice(&key[9..])
+                .expect("stored block key")
+                .unpack(),
+            block_number: core::BlockNumber::from_be_bytes(
+                key[1..9].try_into().expect("stored block key"),
+            )
+            .into(),
+        }))
+    }
+
     fn get_cells(
         &self,
         search_key: SearchKey,
@@ -197,12 +222,10 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
 
         let remain_args_len = args_len - script.args().len();
         let (from_key, direction, skip) = match order {
-            Order::Asc => {
-                after_cursor.map_or_else(
-                    || (prefix.clone(), IteratorDirection::Forward, 0),
-                    |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Forward, 1),
-                )
-            }
+            Order::Asc => after_cursor.map_or_else(
+                || (prefix.clone(), IteratorDirection::Forward, 0),
+                |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Forward, 1),
+            ),
             Order::Desc => {
                 after_cursor.map_or_else(
                     // 16 is BlockNumber + TxIndex + OutputIndex length
@@ -294,12 +317,10 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
 
         let remain_args_len = args_len - script.args().len();
         let (from_key, direction, skip) = match order {
-            Order::Asc => {
-                after_cursor.map_or_else(
-                    || (prefix.clone(), IteratorDirection::Forward, 0),
-                    |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Forward, 1),
-                )
-            }
+            Order::Asc => after_cursor.map_or_else(
+                || (prefix.clone(), IteratorDirection::Forward, 0),
+                |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Forward, 1),
+            ),
             Order::Desc => {
                 after_cursor.map_or_else(
                     // 17 is BlockNumber + TxIndex + IOIndex + IOType length

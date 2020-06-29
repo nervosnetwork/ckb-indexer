@@ -7,6 +7,31 @@ RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test
 
 ## RPC
 
+### `get_tip`
+
+Returns the indexed tip block
+
+#### Parameters
+    null
+
+#### Returns
+
+    block_hash - indexed tip block hash
+    block_number - indexed tip block number
+
+#### Examples
+
+```bash
+echo '{
+    "id": 2,
+    "jsonrpc": "2.0",
+    "method": "get_tip"
+}' \
+| tr -d '\n' \
+| curl -H 'content-type: application/json' -d @- \
+http://localhost:8116
+```
+
 ### `get_cells`
 
 Returns the live cells collection by the lock or type script.
