@@ -121,3 +121,43 @@ echo '{
 | curl -H 'content-type: application/json' -d @- \
 http://localhost:8116
 ```
+
+### `get_cells_capacity`
+
+Returns the live cells capacity by the lock or type script.
+
+#### Parameters
+
+    search_key:
+        script - Script
+        scrip_type - enum, lock | type
+        args_len - maximal prefix search args len, optional
+
+#### Returns
+
+    capacity - total capacity
+    block_hash - indexed tip block hash
+    block_number - indexed tip block number
+
+#### Examples
+
+```bash
+echo '{
+    "id": 2,
+    "jsonrpc": "2.0",
+    "method": "get_cells_capacity",
+    "params": [
+        {
+            "script": {
+                "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
+                "hash_type": "type",
+                "args": "0x8211f1b938a107cd53b6302cc752a6fc3965638d"
+            },
+            "script_type": "lock"
+        }
+    ]
+}' \
+| tr -d '\n' \
+| curl -H 'content-type: application/json' -d @- \
+http://localhost:8116
+```

@@ -1,6 +1,8 @@
 use crate::indexer::{Indexer, Key, KeyPrefix, Value};
 use crate::store::{IteratorDirection, Store};
-use ckb_jsonrpc_types::{BlockNumber, BlockView, CellOutput, JsonBytes, OutPoint, Script, Uint32};
+use ckb_jsonrpc_types::{
+    BlockNumber, BlockView, Capacity, CellOutput, JsonBytes, OutPoint, Script, Uint32,
+};
 use ckb_types::{core, packed, prelude::*, H256};
 use futures::future::Future;
 use jsonrpc_core::{Error, IoHandler, Result};
@@ -111,6 +113,9 @@ pub trait IndexerRpc {
         limit: Uint32,
         after: Option<JsonBytes>,
     ) -> Result<Pagination<Tx>>;
+
+    #[rpc(name = "get_cells_capacity")]
+    fn get_cells_capacity(&self, search_key: SearchKey) -> Result<Option<CellsCapacity>>;
 }
 
 #[derive(Deserialize)]
@@ -136,6 +141,13 @@ pub enum Order {
 
 #[derive(Serialize)]
 pub struct Tip {
+    block_hash: H256,
+    block_number: BlockNumber,
+}
+
+#[derive(Serialize)]
+pub struct CellsCapacity {
+    capacity: Capacity,
     block_hash: H256,
     block_number: BlockNumber,
 }
@@ -391,5 +403,68 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
             objects: txs,
             last_cursor,
         })
+    }
+
+    fn get_cells_capacity(&self, search_key: SearchKey) -> Result<Option<CellsCapacity>> {
+        // TODO extract duplicate code to method
+        let mut prefix = match search_key.script_type {
+            ScriptType::Lock => vec![KeyPrefix::CellLockScript as u8],
+            ScriptType::Type => vec![KeyPrefix::CellTypeScript as u8],
+        };
+        let script: packed::Script = search_key.script.into();
+        let args_len = search_key
+            .args_len
+            .map_or_else(|| script.args().len(), |args_len| args_len.value() as usize);
+        if args_len < script.args().len() {
+            return Err(Error::invalid_params(
+                "args_len should be greater than or equal to script.args.len",
+            ));
+        }
+        if args_len > u16::max_value() as usize {
+            return Err(Error::invalid_params("args_len should be less than 65535"));
+        }
+        prefix.extend_from_slice(script.code_hash().as_slice());
+        prefix.extend_from_slice(script.hash_type().as_slice());
+        prefix.extend_from_slice(&(args_len as u32).to_le_bytes());
+        prefix.extend_from_slice(&script.args().raw_data());
+
+        let capacity: u64 = self
+            .store
+            .iter(&prefix, IteratorDirection::Forward)
+            .expect("indexer store should be OK")
+            .take_while(|(key, _value)| key.starts_with(&prefix))
+            .map(|(key, value)| {
+                let tx_hash = packed::Byte32::from_slice(value.as_ref()).expect("stored tx hash");
+                let index =
+                    u32::from_be_bytes(key[key.len() - 4..].try_into().expect("stored index"));
+                let out_point = packed::OutPoint::new(tx_hash, index);
+                let cell = self
+                    .store
+                    .get(Key::OutPoint(&out_point).into_vec())
+                    .expect("indexer store should be OK")
+                    .expect("stored OutPoint");
+
+                u64::from_le_bytes(
+                    cell[28..36]
+                        .try_into()
+                        .expect("stored cell output capacity"),
+                )
+            })
+            .sum();
+
+        let mut iter = self
+            .store
+            .iter(&[KeyPrefix::Header as u8 + 1], IteratorDirection::Reverse)
+            .expect("indexer store should be OK");
+        Ok(iter.next().map(|(key, _value)| CellsCapacity {
+            capacity: capacity.into(),
+            block_hash: packed::Byte32::from_slice(&key[9..])
+                .expect("stored block key")
+                .unpack(),
+            block_number: core::BlockNumber::from_be_bytes(
+                key[1..9].try_into().expect("stored block key"),
+            )
+            .into(),
+        }))
     }
 }
