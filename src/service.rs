@@ -60,7 +60,7 @@ impl<S: Store + Clone + Send + Sync + 'static> Service<S> {
     pub fn poll(&self, rpc_client: gen_client::Client) {
         let indexer = Indexer::new(self.store.clone(), 100, 1000);
         loop {
-            if let Some((tip_number, tip_hash)) = indexer.tip().unwrap() {
+            if let Some((tip_number, tip_hash)) = indexer.tip().expect("get tip should be OK") {
                 if let Ok(Some(block)) = rpc_client
                     .get_block_by_number((tip_number + 1).into())
                     .wait()
@@ -68,17 +68,19 @@ impl<S: Store + Clone + Send + Sync + 'static> Service<S> {
                     let block: ckb_types::core::BlockView = block.into();
                     if block.parent_hash() == tip_hash {
                         info!("append {}, {}", block.number(), block.hash());
-                        indexer.append(&block).unwrap();
+                        indexer.append(&block).expect("append block should be OK");
                     } else {
                         info!("rollback {}, {}", tip_number, tip_hash);
-                        indexer.rollback().unwrap();
+                        indexer.rollback().expect("rollback block should be OK");
                     }
                 } else {
                     thread::sleep(self.poll_interval);
                 }
             } else {
                 if let Ok(Some(block)) = rpc_client.get_block_by_number(0u64.into()).wait() {
-                    indexer.append(&block.into()).unwrap();
+                    indexer
+                        .append(&block.into())
+                        .expect("append block should be OK");
                 }
             }
         }
@@ -192,7 +194,7 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
         let mut iter = self
             .store
             .iter(&[KeyPrefix::Header as u8 + 1], IteratorDirection::Reverse)
-            .expect("indexer store should be OK");
+            .expect("iter Header should be OK");
         Ok(iter.next().map(|(key, _)| Tip {
             block_hash: packed::Byte32::from_slice(&key[9..])
                 .expect("stored block key")
@@ -256,7 +258,7 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
         let iter = self
             .store
             .iter(&from_key, direction)
-            .expect("indexer store should be OK")
+            .expect("iter should be OK")
             .skip(skip);
 
         let kvs = iter
@@ -275,8 +277,8 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
                     &self
                         .store
                         .get(Key::OutPoint(&out_point).into_vec())
-                        .unwrap()
-                        .unwrap(),
+                        .expect("get OutPoint should be OK")
+                        .expect("stored OutPoint"),
                 );
                 Cell {
                     output: output.into(),
@@ -351,7 +353,7 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
         let iter = self
             .store
             .iter(&from_key, direction)
-            .expect("indexer store should be OK")
+            .expect("iter should be OK")
             .skip(skip);
 
         let kvs = iter
@@ -431,7 +433,7 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
         let capacity: u64 = self
             .store
             .iter(&prefix, IteratorDirection::Forward)
-            .expect("indexer store should be OK")
+            .expect("iter should be OK")
             .take_while(|(key, _value)| key.starts_with(&prefix))
             .map(|(key, value)| {
                 let tx_hash = packed::Byte32::from_slice(value.as_ref()).expect("stored tx hash");
@@ -441,7 +443,7 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
                 let cell = self
                     .store
                     .get(Key::OutPoint(&out_point).into_vec())
-                    .expect("indexer store should be OK")
+                    .expect("get OutPoint should be OK")
                     .expect("stored OutPoint");
 
                 u64::from_le_bytes(
@@ -455,7 +457,7 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
         let mut iter = self
             .store
             .iter(&[KeyPrefix::Header as u8 + 1], IteratorDirection::Reverse)
-            .expect("indexer store should be OK");
+            .expect("iter header should be OK");
         Ok(iter.next().map(|(key, _value)| CellsCapacity {
             capacity: capacity.into(),
             block_hash: packed::Byte32::from_slice(&key[9..])
