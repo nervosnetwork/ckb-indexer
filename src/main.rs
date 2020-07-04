@@ -1,5 +1,4 @@
 use ckb_indexer::service::Service;
-use ckb_indexer::store::RocksdbStore;
 use clap::{App, Arg};
 use futures::Future;
 use hyper::rt;
@@ -31,7 +30,7 @@ fn main() {
         )
         .get_matches();
 
-    let service = Service::<RocksdbStore>::new(
+    let service = Service::new(
         matches.value_of("store_path").expect("required arg"),
         matches.value_of("listen_uri").unwrap_or("127.0.0.1:8116"),
         std::time::Duration::from_secs(2),

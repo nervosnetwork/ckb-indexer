@@ -1,5 +1,5 @@
 use crate::indexer::{Indexer, Key, KeyPrefix, Value};
-use crate::store::{IteratorDirection, Store};
+use crate::store::{IteratorDirection, RocksdbStore, Store};
 use ckb_jsonrpc_types::{
     BlockNumber, BlockView, Capacity, CellOutput, JsonBytes, OutPoint, Script, Uint32,
 };
@@ -11,21 +11,24 @@ use jsonrpc_http_server::{Server, ServerBuilder};
 use jsonrpc_server_utils::cors::AccessControlAllowOrigin;
 use jsonrpc_server_utils::hosts::DomainsValidation;
 use log::info;
+use rocksdb::{Direction, IteratorMode};
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use std::net::ToSocketAddrs;
 use std::thread;
 use std::time::Duration;
 
-pub struct Service<S> {
-    store: S,
+/// Have to use RocksdbStore instead of generic `Store` type here,
+/// because some rpc need rocksdb snapshot funtion which has lifetime mark and is hard to wrap in a trait
+pub struct Service {
+    store: RocksdbStore,
     poll_interval: Duration,
     listen_address: String,
 }
 
-impl<S: Store + Clone + Send + Sync + 'static> Service<S> {
+impl Service {
     pub fn new(store_path: &str, listen_address: &str, poll_interval: Duration) -> Self {
-        let store = S::new(store_path);
+        let store = RocksdbStore::new(store_path);
         Self {
             store,
             listen_address: listen_address.to_string(),
@@ -76,12 +79,10 @@ impl<S: Store + Clone + Send + Sync + 'static> Service<S> {
                 } else {
                     thread::sleep(self.poll_interval);
                 }
-            } else {
-                if let Ok(Some(block)) = rpc_client.get_block_by_number(0u64.into()).wait() {
-                    indexer
-                        .append(&block.into())
-                        .expect("append block should be OK");
-                }
+            } else if let Ok(Some(block)) = rpc_client.get_block_by_number(0u64.into()).wait() {
+                indexer
+                    .append(&block.into())
+                    .expect("append block should be OK");
             }
         }
     }
@@ -185,11 +186,11 @@ pub struct Pagination<T> {
     last_cursor: JsonBytes,
 }
 
-struct IndexerRpcImpl<S> {
-    store: S,
+struct IndexerRpcImpl {
+    store: RocksdbStore,
 }
 
-impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
+impl IndexerRpc for IndexerRpcImpl {
     fn get_tip(&self) -> Result<Option<Tip>> {
         let mut iter = self
             .store
@@ -237,8 +238,8 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
         let remain_args_len = args_len - script.args().len();
         let (from_key, direction, skip) = match order {
             Order::Asc => after_cursor.map_or_else(
-                || (prefix.clone(), IteratorDirection::Forward, 0),
-                |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Forward, 1),
+                || (prefix.clone(), Direction::Forward, 0),
+                |json_bytes| (json_bytes.as_bytes().into(), Direction::Forward, 1),
             ),
             Order::Desc => {
                 after_cursor.map_or_else(
@@ -246,20 +247,18 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
                     || {
                         (
                             [prefix.clone(), vec![0xff; remain_args_len + 16]].concat(),
-                            IteratorDirection::Reverse,
+                            Direction::Reverse,
                             0,
                         )
                     },
-                    |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Reverse, 1),
+                    |json_bytes| (json_bytes.as_bytes().into(), Direction::Reverse, 1),
                 )
             }
         };
 
-        let iter = self
-            .store
-            .iter(&from_key, direction)
-            .expect("iter should be OK")
-            .skip(skip);
+        let snapshot = self.store.inner().snapshot();
+        let mode = IteratorMode::From(from_key.as_ref(), direction);
+        let iter = snapshot.iterator(mode).skip(skip);
 
         let kvs = iter
             .take(limit.value() as usize)
@@ -274,8 +273,7 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
                     u32::from_be_bytes(key[key.len() - 4..].try_into().expect("stored index"));
                 let out_point = packed::OutPoint::new(tx_hash, index);
                 let (block_number, tx_index, output, output_data) = Value::parse_cell_value(
-                    &self
-                        .store
+                    &snapshot
                         .get(Key::OutPoint(&out_point).into_vec())
                         .expect("get OutPoint should be OK")
                         .expect("stored OutPoint"),
@@ -290,10 +288,11 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
             })
             .collect::<Vec<Cell>>();
 
-        let last_cursor = kvs.last().map_or_else(
-            || JsonBytes::default(),
-            |(last_key, _last_value)| JsonBytes::from_vec(last_key.clone().into()),
-        );
+        let last_cursor = kvs
+            .last()
+            .map_or_else(JsonBytes::default, |(last_key, _last_value)| {
+                JsonBytes::from_vec(last_key.clone().into())
+            });
 
         Ok(Pagination {
             objects: cells,
@@ -396,10 +395,11 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
             })
             .collect::<Vec<_>>();
 
-        let last_cursor = kvs.last().map_or_else(
-            || JsonBytes::default(),
-            |(last_key, _last_value)| JsonBytes::from_vec(last_key.clone().into()),
-        );
+        let last_cursor = kvs
+            .last()
+            .map_or_else(JsonBytes::default, |(last_key, _last_value)| {
+                JsonBytes::from_vec(last_key.clone().into())
+            });
 
         Ok(Pagination {
             objects: txs,
@@ -430,18 +430,18 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
         prefix.extend_from_slice(&(args_len as u32).to_le_bytes());
         prefix.extend_from_slice(&script.args().raw_data());
 
-        let capacity: u64 = self
-            .store
-            .iter(&prefix, IteratorDirection::Forward)
-            .expect("iter should be OK")
+        let snapshot = self.store.inner().snapshot();
+        let cells_mode = IteratorMode::From(prefix.as_ref(), Direction::Forward);
+        let cells_iter = snapshot.iterator(cells_mode);
+
+        let capacity: u64 = cells_iter
             .take_while(|(key, _value)| key.starts_with(&prefix))
             .map(|(key, value)| {
                 let tx_hash = packed::Byte32::from_slice(value.as_ref()).expect("stored tx hash");
                 let index =
                     u32::from_be_bytes(key[key.len() - 4..].try_into().expect("stored index"));
                 let out_point = packed::OutPoint::new(tx_hash, index);
-                let cell = self
-                    .store
+                let cell = snapshot
                     .get(Key::OutPoint(&out_point).into_vec())
                     .expect("get OutPoint should be OK")
                     .expect("stored OutPoint");
@@ -454,11 +454,9 @@ impl<S: Store + Send + Sync + 'static> IndexerRpc for IndexerRpcImpl<S> {
             })
             .sum();
 
-        let mut iter = self
-            .store
-            .iter(&[KeyPrefix::Header as u8 + 1], IteratorDirection::Reverse)
-            .expect("iter header should be OK");
-        Ok(iter.next().map(|(key, _value)| CellsCapacity {
+        let tip_mode = IteratorMode::From(&[KeyPrefix::Header as u8 + 1], Direction::Reverse);
+        let mut tip_iter = snapshot.iterator(tip_mode);
+        Ok(tip_iter.next().map(|(key, _value)| CellsCapacity {
             capacity: capacity.into(),
             block_hash: packed::Byte32::from_slice(&key[9..])
                 .expect("stored block key")

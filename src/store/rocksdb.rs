@@ -80,6 +80,12 @@ impl From<rocksdb::Error> for Error {
     }
 }
 
+impl RocksdbStore {
+    pub fn inner(&self) -> &DB {
+        &self.db
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
