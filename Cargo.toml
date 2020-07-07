@@ -1,6 +1,6 @@
 [package]
 name = "ckb-indexer"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["quake <quake.wang@gmail.com>"]
 edition = "2018"
 
