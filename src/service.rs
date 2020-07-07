@@ -10,7 +10,7 @@ use jsonrpc_derive::rpc;
 use jsonrpc_http_server::{Server, ServerBuilder};
 use jsonrpc_server_utils::cors::AccessControlAllowOrigin;
 use jsonrpc_server_utils::hosts::DomainsValidation;
-use log::info;
+use log::{error, info, trace};
 use rocksdb::{Direction, IteratorMode};
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -64,25 +64,43 @@ impl Service {
         let indexer = Indexer::new(self.store.clone(), 100, 1000);
         loop {
             if let Some((tip_number, tip_hash)) = indexer.tip().expect("get tip should be OK") {
-                if let Ok(Some(block)) = rpc_client
+                match rpc_client
                     .get_block_by_number((tip_number + 1).into())
                     .wait()
                 {
-                    let block: ckb_types::core::BlockView = block.into();
-                    if block.parent_hash() == tip_hash {
-                        info!("append {}, {}", block.number(), block.hash());
-                        indexer.append(&block).expect("append block should be OK");
-                    } else {
-                        info!("rollback {}, {}", tip_number, tip_hash);
-                        indexer.rollback().expect("rollback block should be OK");
+                    Ok(Some(block)) => {
+                        let block: ckb_types::core::BlockView = block.into();
+                        if block.parent_hash() == tip_hash {
+                            info!("append {}, {}", block.number(), block.hash());
+                            indexer.append(&block).expect("append block should be OK");
+                        } else {
+                            info!("rollback {}, {}", tip_number, tip_hash);
+                            indexer.rollback().expect("rollback block should be OK");
+                        }
                     }
-                } else {
-                    thread::sleep(self.poll_interval);
+                    Ok(None) => {
+                        trace!("no new block");
+                        thread::sleep(self.poll_interval);
+                    }
+                    Err(err) => {
+                        error!("cannot get block from ckb node, error: {}", err);
+                        thread::sleep(self.poll_interval);
+                    }
                 }
-            } else if let Ok(Some(block)) = rpc_client.get_block_by_number(0u64.into()).wait() {
-                indexer
-                    .append(&block.into())
-                    .expect("append block should be OK");
+            } else {
+                match rpc_client.get_block_by_number(0u64.into()).wait() {
+                    Ok(Some(block)) => indexer
+                        .append(&block.into())
+                        .expect("append block should be OK"),
+                    Ok(None) => {
+                        error!("ckb node returns an empty genesis block");
+                        thread::sleep(self.poll_interval);
+                    }
+                    Err(err) => {
+                        error!("cannot get genesis block from ckb node, error: {}", err);
+                        thread::sleep(self.poll_interval);
+                    }
+                }
             }
         }
     }
