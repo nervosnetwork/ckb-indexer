@@ -220,7 +220,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-indexer"
-version = "0.1.4"
+version = "0.1.6"
 dependencies = [
  "ckb-jsonrpc-types",
  "ckb-types",

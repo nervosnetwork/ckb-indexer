@@ -556,7 +556,8 @@ where
             let key_prefix_consumed_out_point = vec![KeyPrefix::ConsumedOutPoint as u8];
             let iter = self
                 .store
-                .iter(&key_prefix_consumed_out_point, IteratorDirection::Forward)?;
+                .iter(&key_prefix_consumed_out_point, IteratorDirection::Forward)?
+                .take_while(|(key, _value)| key.starts_with(&key_prefix_consumed_out_point));
             for (_block_number, key) in iter
                 .map(|(key, _value)| {
                     (
@@ -1375,5 +1376,87 @@ mod tests {
         assert!(indexer.tip().unwrap().is_none());
         let mut iter = indexer.store.iter(&[], IteratorDirection::Forward).unwrap();
         assert!(iter.next().is_none());
+    }
+
+    // test bug fix of https://github.com/quake/ckb-indexer/issues/7
+    #[test]
+    fn prune_should_not_delete_live_cells() {
+        let indexer = new_indexer::<RocksdbStore>("prune_should_not_delete_live_cells");
+
+        let all_zero_lock_script = ScriptBuilder::default()
+            .code_hash(H256([0; 32]).pack())
+            .hash_type(ScriptHashType::Data.into())
+            .build();
+
+        let lock_script1 = ScriptBuilder::default()
+            .code_hash(H256(rand::random()).pack())
+            .hash_type(ScriptHashType::Data.into())
+            .args(Bytes::from(b"lock_script1".to_vec()).pack())
+            .build();
+
+        let cellbase0 = TransactionBuilder::default()
+            .input(CellInput::new_cellbase_input(0))
+            .witness(Script::default().into_witness())
+            .output(
+                CellOutputBuilder::default()
+                    .capacity(capacity_bytes!(1000).pack())
+                    .lock(all_zero_lock_script.clone())
+                    .build(),
+            )
+            .output_data(Default::default())
+            .build();
+
+        let block0 = BlockBuilder::default()
+            .transaction(cellbase0)
+            .header(HeaderBuilder::default().number(0.pack()).build())
+            .build();
+
+        indexer.append(&block0).unwrap();
+
+        assert_eq!(
+            1, //cellbase0
+            indexer
+                .get_live_cells_by_lock_script(&all_zero_lock_script)
+                .unwrap()
+                .len()
+        );
+
+        let mut pre_block = block0;
+
+        // keep_num is 10, use 11 to trigger prune
+        for i in 0..11 {
+            let cellbase = TransactionBuilder::default()
+                .input(CellInput::new_cellbase_input(i + 1))
+                .witness(Script::default().into_witness())
+                .output(
+                    CellOutputBuilder::default()
+                        .capacity(capacity_bytes!(1000).pack())
+                        .lock(lock_script1.clone())
+                        .build(),
+                )
+                .output_data(Default::default())
+                .build();
+
+            pre_block = BlockBuilder::default()
+                .transaction(cellbase)
+                .header(
+                    HeaderBuilder::default()
+                        .number((pre_block.number() + 1).pack())
+                        .parent_hash(pre_block.hash())
+                        .build(),
+                )
+                .build();
+
+            indexer.append(&pre_block).unwrap();
+        }
+
+        // should not delete live cells by mistake
+        assert_eq!(
+            1, //cellbase0
+            indexer
+                .get_live_cells_by_lock_script(&all_zero_lock_script)
+                .unwrap()
+                .len()
+        );
     }
 }
