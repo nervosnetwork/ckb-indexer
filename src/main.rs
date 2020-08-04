@@ -12,7 +12,7 @@ fn main() {
         .arg(
             Arg::with_name("ckb_uri")
                 .short("c")
-                .help("CKB rpc http service uri, default 127.0.0.1:8114")
+                .help("CKB rpc http service uri, default http://127.0.0.1:8114")
                 .takes_value(true),
         )
         .arg(
@@ -38,10 +38,13 @@ fn main() {
     let rpc_server = service.start();
 
     rt::run(rt::lazy(move || {
-        let uri = format!(
-            "http://{}",
-            matches.value_of("ckb_uri").unwrap_or("127.0.0.1:8114")
-        );
+        let mut uri = matches
+            .value_of("ckb_uri")
+            .unwrap_or("http://127.0.0.1:8114")
+            .to_owned();
+        if !uri.starts_with("http") {
+            uri = format!("http://{}", uri);
+        }
 
         http::connect(&uri)
             .and_then(move |client| {
