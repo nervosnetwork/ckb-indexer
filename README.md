@@ -1,3 +1,7 @@
+## Introduce
+
+All the [indexing](https://github.com/nervosnetwork/ckb/tree/develop/rpc#indexer) RPCs built in the CKB will be deprecated soon. This is a standalone service for creating cell indexes.
+
 ## Usage
 
 ```bash
