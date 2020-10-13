@@ -1,11 +1,12 @@
 use crate::indexer::{Indexer, Key, KeyPrefix, Value};
 use crate::store::{IteratorDirection, RocksdbStore, Store};
 use ckb_jsonrpc_types::{
-    BlockNumber, BlockView, Capacity, CellOutput, JsonBytes, OutPoint, Script, Uint32,
+    BlockNumber, BlockView, Capacity, CellOutput, JsonBytes, LocalNode, OutPoint, Script, Uint32,
 };
 use ckb_types::{core, packed, prelude::*, H256};
 use futures::future::Future;
 use jsonrpc_core::{Error, IoHandler, Result};
+use jsonrpc_core_client::RpcError;
 use jsonrpc_derive::rpc;
 use jsonrpc_http_server::{Server, ServerBuilder};
 use jsonrpc_server_utils::cors::AccessControlAllowOrigin;
@@ -62,14 +63,18 @@ impl Service {
 
     pub fn poll(&self, rpc_client: gen_client::Client) {
         let indexer = Indexer::new(self.store.clone(), 100, 1000);
+        // 0.37.0 and above supports hex format
+        let use_hex_format = rpc_client
+            .local_node_info()
+            .wait()
+            .expect("call rpc local_node_info should be OK")
+            .version
+            > "0.36".to_owned();
+
         loop {
             if let Some((tip_number, tip_hash)) = indexer.tip().expect("get tip should be OK") {
-                match rpc_client
-                    .get_block_by_number((tip_number + 1).into())
-                    .wait()
-                {
+                match get_block_by_number(&rpc_client, tip_number + 1, use_hex_format) {
                     Ok(Some(block)) => {
-                        let block: ckb_types::core::BlockView = block.into();
                         if block.parent_hash() == tip_hash {
                             info!("append {}, {}", block.number(), block.hash());
                             indexer.append(&block).expect("append block should be OK");
@@ -88,10 +93,8 @@ impl Service {
                     }
                 }
             } else {
-                match rpc_client.get_block_by_number(0u64.into()).wait() {
-                    Ok(Some(block)) => indexer
-                        .append(&block.into())
-                        .expect("append block should be OK"),
+                match get_block_by_number(&rpc_client, 0, use_hex_format) {
+                    Ok(Some(block)) => indexer.append(&block).expect("append block should be OK"),
                     Ok(None) => {
                         error!("ckb node returns an empty genesis block");
                         thread::sleep(self.poll_interval);
@@ -106,10 +109,42 @@ impl Service {
     }
 }
 
+fn get_block_by_number(
+    rpc_client: &gen_client::Client,
+    block_number: u64,
+    use_hex_format: bool,
+) -> ::std::result::Result<Option<core::BlockView>, RpcError> {
+    if use_hex_format {
+        rpc_client
+            .get_block_by_number_with_verbosity(block_number.into(), 0.into())
+            .wait()
+            .map(|opt| {
+                opt.map(|json_bytes| {
+                    ckb_types::packed::Block::new_unchecked(json_bytes.into_bytes()).into_view()
+                })
+            })
+    } else {
+        rpc_client
+            .get_block_by_number(block_number.into())
+            .wait()
+            .map(|opt| opt.map(Into::into))
+    }
+}
+
 #[rpc(client)]
 pub trait CkbRpc {
     #[rpc(name = "get_block_by_number")]
-    fn get_block_by_number(&self, _number: BlockNumber) -> Result<Option<BlockView>>;
+    fn get_block_by_number(&self, number: BlockNumber) -> Result<Option<BlockView>>;
+
+    #[rpc(name = "get_block_by_number")]
+    fn get_block_by_number_with_verbosity(
+        &self,
+        number: BlockNumber,
+        verbosity: Uint32,
+    ) -> Result<Option<JsonBytes>>;
+
+    #[rpc(name = "local_node_info")]
+    fn local_node_info(&self) -> Result<LocalNode>;
 }
 
 #[rpc(server)]
