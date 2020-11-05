@@ -466,8 +466,10 @@ fn build_query_options(
     }
     prefix.extend_from_slice(script.code_hash().as_slice());
     prefix.extend_from_slice(script.hash_type().as_slice());
-    prefix.extend_from_slice(&(args_len as u32).to_le_bytes());
-    prefix.extend_from_slice(&script.args().raw_data());
+    if args_len > 0 {
+        prefix.extend_from_slice(&(args_len as u32).to_le_bytes());
+        prefix.extend_from_slice(&script.args().raw_data());
+    }
 
     let (from_key, direction, skip) = match order {
         Order::Asc => after_cursor.map_or_else(
