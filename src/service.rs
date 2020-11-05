@@ -1,7 +1,8 @@
-use crate::indexer::{Indexer, Key, KeyPrefix, Value};
+use crate::indexer::{Indexer, Key, KeyPrefix, Value, SCRIPT_SERIALIZE_OFFSET};
 use crate::store::{IteratorDirection, RocksdbStore, Store};
 use ckb_jsonrpc_types::{
     BlockNumber, BlockView, Capacity, CellOutput, JsonBytes, LocalNode, OutPoint, Script, Uint32,
+    Uint64,
 };
 use ckb_types::{core, packed, prelude::*, H256};
 use futures::future::Future;
@@ -184,6 +185,16 @@ pub struct SearchKey {
     script: Script,
     script_type: ScriptType,
     args_len: Option<Uint32>,
+    filter: Option<SearchKeyFilter>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct SearchKeyFilter {
+    script: Option<Script>,
+    args_len: Option<Uint32>,
+    output_data_len_range: Option<[Uint64; 2]>,
+    output_capacity_range: Option<[Uint64; 2]>,
+    block_range: Option<[BlockNumber; 2]>,
 }
 
 #[derive(Deserialize)]
@@ -273,12 +284,22 @@ impl IndexerRpc for IndexerRpcImpl {
         after_cursor: Option<JsonBytes>,
     ) -> Result<Pagination<Cell>> {
         let (prefix, from_key, direction, skip) = build_query_options(
-            search_key,
+            &search_key,
             KeyPrefix::CellLockScript,
             KeyPrefix::CellTypeScript,
             order,
             after_cursor,
         )?;
+        let filter_script_type = match search_key.script_type {
+            ScriptType::Lock => ScriptType::Type,
+            ScriptType::Type => ScriptType::Lock,
+        };
+        let (
+            filter_prefix,
+            filter_output_data_len_range,
+            filter_output_capacity_range,
+            filter_block_range,
+        ) = build_filter_options(search_key)?;
         let mode = IteratorMode::From(from_key.as_ref(), direction);
         let snapshot = self.store.inner().snapshot();
         let iter = snapshot.iterator(mode).skip(skip);
@@ -290,7 +311,7 @@ impl IndexerRpc for IndexerRpcImpl {
 
         let cells = kvs
             .iter()
-            .map(|(key, value)| {
+            .filter_map(|(key, value)| {
                 let tx_hash = packed::Byte32::from_slice(value).expect("stored tx hash");
                 let index =
                     u32::from_be_bytes(key[key.len() - 4..].try_into().expect("stored index"));
@@ -301,13 +322,53 @@ impl IndexerRpc for IndexerRpcImpl {
                         .expect("get OutPoint should be OK")
                         .expect("stored OutPoint"),
                 );
-                Cell {
+
+                if let Some(prefix) = filter_prefix.as_ref() {
+                    match filter_script_type {
+                        ScriptType::Lock => {
+                            if !output.lock().as_slice()[SCRIPT_SERIALIZE_OFFSET..]
+                                .starts_with(prefix)
+                            {
+                                return None;
+                            }
+                        }
+                        ScriptType::Type => {
+                            if output.type_().is_none()
+                                || !output.type_().as_slice()[SCRIPT_SERIALIZE_OFFSET..]
+                                    .starts_with(prefix)
+                            {
+                                return None;
+                            }
+                        }
+                    }
+                }
+
+                if let Some([r0, r1]) = filter_output_data_len_range {
+                    if output_data.len() < r0 || output_data.len() >= r1 {
+                        return None;
+                    }
+                }
+
+                if let Some([r0, r1]) = filter_output_capacity_range {
+                    let capacity: core::Capacity = output.capacity().unpack();
+                    if capacity < r0 || capacity >= r1 {
+                        return None;
+                    }
+                }
+
+                if let Some([r0, r1]) = filter_block_range {
+                    if block_number < r0 || block_number >= r1 {
+                        return None;
+                    }
+                }
+
+                Some(Cell {
                     output: output.into(),
                     output_data: output_data.into(),
                     out_point: out_point.into(),
                     block_number: block_number.into(),
                     tx_index: tx_index.into(),
-                }
+                })
             })
             .collect::<Vec<Cell>>();
 
@@ -330,8 +391,13 @@ impl IndexerRpc for IndexerRpcImpl {
         limit: Uint32,
         after_cursor: Option<JsonBytes>,
     ) -> Result<Pagination<Tx>> {
+        if search_key.filter.is_some() {
+            return Err(Error::invalid_params(
+                "doesn't support search_key.filter parameter",
+            ));
+        }
         let (prefix, from_key, direction, skip) = build_query_options(
-            search_key,
+            &search_key,
             KeyPrefix::TxLockScript,
             KeyPrefix::TxTypeScript,
             order,
@@ -395,33 +461,79 @@ impl IndexerRpc for IndexerRpcImpl {
 
     fn get_cells_capacity(&self, search_key: SearchKey) -> Result<Option<CellsCapacity>> {
         let (prefix, from_key, direction, skip) = build_query_options(
-            search_key,
+            &search_key,
             KeyPrefix::CellLockScript,
             KeyPrefix::CellTypeScript,
             Order::Asc,
             None,
         )?;
+        let filter_script_type = match search_key.script_type {
+            ScriptType::Lock => ScriptType::Type,
+            ScriptType::Type => ScriptType::Lock,
+        };
+        let (
+            filter_prefix,
+            filter_output_data_len_range,
+            filter_output_capacity_range,
+            filter_block_range,
+        ) = build_filter_options(search_key)?;
         let mode = IteratorMode::From(from_key.as_ref(), direction);
         let snapshot = self.store.inner().snapshot();
         let iter = snapshot.iterator(mode).skip(skip);
 
         let capacity: u64 = iter
             .take_while(|(key, _value)| key.starts_with(&prefix))
-            .map(|(key, value)| {
+            .filter_map(|(key, value)| {
                 let tx_hash = packed::Byte32::from_slice(value.as_ref()).expect("stored tx hash");
                 let index =
                     u32::from_be_bytes(key[key.len() - 4..].try_into().expect("stored index"));
                 let out_point = packed::OutPoint::new(tx_hash, index);
-                let cell = snapshot
-                    .get(Key::OutPoint(&out_point).into_vec())
-                    .expect("get OutPoint should be OK")
-                    .expect("stored OutPoint");
+                let (block_number, _tx_index, output, output_data) = Value::parse_cell_value(
+                    &snapshot
+                        .get(Key::OutPoint(&out_point).into_vec())
+                        .expect("get OutPoint should be OK")
+                        .expect("stored OutPoint"),
+                );
 
-                u64::from_le_bytes(
-                    cell[28..36]
-                        .try_into()
-                        .expect("stored cell output capacity"),
-                )
+                if let Some(prefix) = filter_prefix.as_ref() {
+                    match filter_script_type {
+                        ScriptType::Lock => {
+                            if !output.lock().as_slice()[SCRIPT_SERIALIZE_OFFSET..]
+                                .starts_with(prefix)
+                            {
+                                return None;
+                            }
+                        }
+                        ScriptType::Type => {
+                            if !output.type_().as_slice()[SCRIPT_SERIALIZE_OFFSET..]
+                                .starts_with(prefix)
+                            {
+                                return None;
+                            }
+                        }
+                    }
+                }
+
+                if let Some([r0, r1]) = filter_output_data_len_range {
+                    if output_data.len() < r0 || output_data.len() >= r1 {
+                        return None;
+                    }
+                }
+
+                if let Some([r0, r1]) = filter_output_capacity_range {
+                    let capacity: core::Capacity = output.capacity().unpack();
+                    if capacity < r0 || capacity >= r1 {
+                        return None;
+                    }
+                }
+
+                if let Some([r0, r1]) = filter_block_range {
+                    if block_number < r0 || block_number >= r1 {
+                        return None;
+                    }
+                }
+
+                Some(Unpack::<core::Capacity>::unpack(&output.capacity()).as_u64())
             })
             .sum();
 
@@ -444,7 +556,7 @@ const MAX_PREFIX_SEARCH_SIZE: usize = u16::max_value() as usize;
 
 // a helper fn to build query options from search paramters, returns prefix, from_key, direction and skip offset
 fn build_query_options(
-    search_key: SearchKey,
+    search_key: &SearchKey,
     lock_prefix: KeyPrefix,
     type_prefix: KeyPrefix,
     order: Order,
@@ -454,7 +566,7 @@ fn build_query_options(
         ScriptType::Lock => vec![lock_prefix as u8],
         ScriptType::Type => vec![type_prefix as u8],
     };
-    let script: packed::Script = search_key.script.into();
+    let script: packed::Script = search_key.script.clone().into();
     let args_len = search_key
         .args_len
         .map_or_else(|| script.args().len(), |args_len| args_len.value() as usize);
@@ -494,4 +606,69 @@ fn build_query_options(
     };
 
     Ok((prefix, from_key, direction, skip))
+}
+
+// a helper fn to build filter options from search paramters, returns prefix, output_data_len_range, output_capacity_range and block_range
+fn build_filter_options(
+    search_key: SearchKey,
+) -> Result<(
+    Option<Vec<u8>>,
+    Option<[usize; 2]>,
+    Option<[core::Capacity; 2]>,
+    Option<[core::BlockNumber; 2]>,
+)> {
+    let SearchKey {
+        script: _,
+        script_type: _,
+        args_len: _,
+        filter,
+    } = search_key;
+    let filter = filter.unwrap_or_default();
+    let filter_script_prefix = if let Some(script) = filter.script {
+        let script: packed::Script = script.into();
+        let args_len = filter
+            .args_len
+            .map_or_else(|| script.args().len(), |args_len| args_len.value() as usize);
+        if args_len < script.args().len() {
+            return Err(Error::invalid_params(
+                "args_len should be greater than or equal to script.args.len",
+            ));
+        }
+        if args_len > MAX_PREFIX_SEARCH_SIZE {
+            return Err(Error::invalid_params(format!(
+                "args_len should be less than {}",
+                MAX_PREFIX_SEARCH_SIZE
+            )));
+        }
+        let mut prefix = Vec::from(script.code_hash().as_slice());
+        prefix.extend_from_slice(script.hash_type().as_slice());
+        if args_len > 0 {
+            prefix.extend_from_slice(&(args_len as u32).to_le_bytes());
+            prefix.extend_from_slice(&script.args().raw_data());
+        }
+        Some(prefix)
+    } else {
+        None
+    };
+
+    let filter_output_data_len_range = filter.output_data_len_range.map(|[r0, r1]| {
+        [
+            Into::<u64>::into(r0) as usize,
+            Into::<u64>::into(r1) as usize,
+        ]
+    });
+    let filter_output_capacity_range = filter.output_capacity_range.map(|[r0, r1]| {
+        [
+            core::Capacity::shannons(r0.into()),
+            core::Capacity::shannons(r1.into()),
+        ]
+    });
+    let filter_block_range = filter.block_range.map(|r| [r[0].into(), r[1].into()]);
+
+    Ok((
+        filter_script_prefix,
+        filter_output_data_len_range,
+        filter_output_capacity_range,
+        filter_block_range,
+    ))
 }
