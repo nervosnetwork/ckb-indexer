@@ -267,50 +267,15 @@ impl IndexerRpc for IndexerRpcImpl {
         limit: Uint32,
         after_cursor: Option<JsonBytes>,
     ) -> Result<Pagination<Cell>> {
-        let mut prefix = match search_key.script_type {
-            ScriptType::Lock => vec![KeyPrefix::CellLockScript as u8],
-            ScriptType::Type => vec![KeyPrefix::CellTypeScript as u8],
-        };
-        let script: packed::Script = search_key.script.into();
-        let args_len = search_key
-            .args_len
-            .map_or_else(|| script.args().len(), |args_len| args_len.value() as usize);
-        if args_len < script.args().len() {
-            return Err(Error::invalid_params(
-                "args_len should be greater than or equal to script.args.len",
-            ));
-        }
-        if args_len > u16::max_value() as usize {
-            return Err(Error::invalid_params("args_len should be less than 65535"));
-        }
-        prefix.extend_from_slice(script.code_hash().as_slice());
-        prefix.extend_from_slice(script.hash_type().as_slice());
-        prefix.extend_from_slice(&(args_len as u32).to_le_bytes());
-        prefix.extend_from_slice(&script.args().raw_data());
-
-        let remain_args_len = args_len - script.args().len();
-        let (from_key, direction, skip) = match order {
-            Order::Asc => after_cursor.map_or_else(
-                || (prefix.clone(), Direction::Forward, 0),
-                |json_bytes| (json_bytes.as_bytes().into(), Direction::Forward, 1),
-            ),
-            Order::Desc => {
-                after_cursor.map_or_else(
-                    // 16 is BlockNumber + TxIndex + OutputIndex length
-                    || {
-                        (
-                            [prefix.clone(), vec![0xff; remain_args_len + 16]].concat(),
-                            Direction::Reverse,
-                            0,
-                        )
-                    },
-                    |json_bytes| (json_bytes.as_bytes().into(), Direction::Reverse, 1),
-                )
-            }
-        };
-
-        let snapshot = self.store.inner().snapshot();
+        let (prefix, from_key, direction, skip) = build_query_options(
+            search_key,
+            KeyPrefix::CellLockScript,
+            KeyPrefix::CellTypeScript,
+            order,
+            after_cursor,
+        )?;
         let mode = IteratorMode::From(from_key.as_ref(), direction);
+        let snapshot = self.store.inner().snapshot();
         let iter = snapshot.iterator(mode).skip(skip);
 
         let kvs = iter
@@ -360,53 +325,16 @@ impl IndexerRpc for IndexerRpcImpl {
         limit: Uint32,
         after_cursor: Option<JsonBytes>,
     ) -> Result<Pagination<Tx>> {
-        let mut prefix = match search_key.script_type {
-            ScriptType::Lock => vec![KeyPrefix::TxLockScript as u8],
-            ScriptType::Type => vec![KeyPrefix::TxTypeScript as u8],
-        };
-        let script: packed::Script = search_key.script.into();
-        let args_len = search_key
-            .args_len
-            .map_or_else(|| script.args().len(), |args_len| args_len.value() as usize);
-        if args_len < script.args().len() {
-            return Err(Error::invalid_params(
-                "args_len should be greater than or equal to script.args.len",
-            ));
-        }
-        if args_len > u16::max_value() as usize {
-            return Err(Error::invalid_params("args_len should be less than 65535"));
-        }
-        prefix.extend_from_slice(script.code_hash().as_slice());
-        prefix.extend_from_slice(script.hash_type().as_slice());
-        prefix.extend_from_slice(&(args_len as u32).to_le_bytes());
-        prefix.extend_from_slice(&script.args().raw_data());
-
-        let remain_args_len = args_len - script.args().len();
-        let (from_key, direction, skip) = match order {
-            Order::Asc => after_cursor.map_or_else(
-                || (prefix.clone(), IteratorDirection::Forward, 0),
-                |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Forward, 1),
-            ),
-            Order::Desc => {
-                after_cursor.map_or_else(
-                    // 17 is BlockNumber + TxIndex + IOIndex + IOType length
-                    || {
-                        (
-                            [prefix.clone(), vec![0xff; remain_args_len + 17]].concat(),
-                            IteratorDirection::Reverse,
-                            0,
-                        )
-                    },
-                    |json_bytes| (json_bytes.as_bytes().into(), IteratorDirection::Reverse, 1),
-                )
-            }
-        };
-
-        let iter = self
-            .store
-            .iter(&from_key, direction)
-            .expect("iter should be OK")
-            .skip(skip);
+        let (prefix, from_key, direction, skip) = build_query_options(
+            search_key,
+            KeyPrefix::TxLockScript,
+            KeyPrefix::TxTypeScript,
+            order,
+            after_cursor,
+        )?;
+        let mode = IteratorMode::From(from_key.as_ref(), direction);
+        let snapshot = self.store.inner().snapshot();
+        let iter = snapshot.iterator(mode).skip(skip);
 
         let kvs = iter
             .take_while(|(key, _value)| key.starts_with(&prefix))
@@ -461,33 +389,18 @@ impl IndexerRpc for IndexerRpcImpl {
     }
 
     fn get_cells_capacity(&self, search_key: SearchKey) -> Result<Option<CellsCapacity>> {
-        // TODO extract duplicate code to method
-        let mut prefix = match search_key.script_type {
-            ScriptType::Lock => vec![KeyPrefix::CellLockScript as u8],
-            ScriptType::Type => vec![KeyPrefix::CellTypeScript as u8],
-        };
-        let script: packed::Script = search_key.script.into();
-        let args_len = search_key
-            .args_len
-            .map_or_else(|| script.args().len(), |args_len| args_len.value() as usize);
-        if args_len < script.args().len() {
-            return Err(Error::invalid_params(
-                "args_len should be greater than or equal to script.args.len",
-            ));
-        }
-        if args_len > u16::max_value() as usize {
-            return Err(Error::invalid_params("args_len should be less than 65535"));
-        }
-        prefix.extend_from_slice(script.code_hash().as_slice());
-        prefix.extend_from_slice(script.hash_type().as_slice());
-        prefix.extend_from_slice(&(args_len as u32).to_le_bytes());
-        prefix.extend_from_slice(&script.args().raw_data());
-
+        let (prefix, from_key, direction, skip) = build_query_options(
+            search_key,
+            KeyPrefix::CellLockScript,
+            KeyPrefix::CellTypeScript,
+            Order::Asc,
+            None,
+        )?;
+        let mode = IteratorMode::From(from_key.as_ref(), direction);
         let snapshot = self.store.inner().snapshot();
-        let cells_mode = IteratorMode::From(prefix.as_ref(), Direction::Forward);
-        let cells_iter = snapshot.iterator(cells_mode);
+        let iter = snapshot.iterator(mode).skip(skip);
 
-        let capacity: u64 = cells_iter
+        let capacity: u64 = iter
             .take_while(|(key, _value)| key.starts_with(&prefix))
             .map(|(key, value)| {
                 let tx_hash = packed::Byte32::from_slice(value.as_ref()).expect("stored tx hash");
@@ -520,4 +433,58 @@ impl IndexerRpc for IndexerRpcImpl {
             .into(),
         }))
     }
+}
+
+const MAX_PREFIX_SEARCH_SIZE: usize = u16::max_value() as usize;
+
+// a helper fn to build query options from search paramters, returns prefix, from_key, direction and skip offset
+fn build_query_options(
+    search_key: SearchKey,
+    lock_prefix: KeyPrefix,
+    type_prefix: KeyPrefix,
+    order: Order,
+    after_cursor: Option<JsonBytes>,
+) -> Result<(Vec<u8>, Vec<u8>, Direction, usize)> {
+    let mut prefix = match search_key.script_type {
+        ScriptType::Lock => vec![lock_prefix as u8],
+        ScriptType::Type => vec![type_prefix as u8],
+    };
+    let script: packed::Script = search_key.script.into();
+    let args_len = search_key
+        .args_len
+        .map_or_else(|| script.args().len(), |args_len| args_len.value() as usize);
+    if args_len < script.args().len() {
+        return Err(Error::invalid_params(
+            "args_len should be greater than or equal to script.args.len",
+        ));
+    }
+    if args_len > MAX_PREFIX_SEARCH_SIZE {
+        return Err(Error::invalid_params(format!(
+            "args_len should be less than {}",
+            MAX_PREFIX_SEARCH_SIZE
+        )));
+    }
+    prefix.extend_from_slice(script.code_hash().as_slice());
+    prefix.extend_from_slice(script.hash_type().as_slice());
+    prefix.extend_from_slice(&(args_len as u32).to_le_bytes());
+    prefix.extend_from_slice(&script.args().raw_data());
+
+    let (from_key, direction, skip) = match order {
+        Order::Asc => after_cursor.map_or_else(
+            || (prefix.clone(), Direction::Forward, 0),
+            |json_bytes| (json_bytes.as_bytes().into(), Direction::Forward, 1),
+        ),
+        Order::Desc => after_cursor.map_or_else(
+            || {
+                (
+                    [prefix.clone(), vec![0xff; MAX_PREFIX_SEARCH_SIZE]].concat(),
+                    Direction::Reverse,
+                    0,
+                )
+            },
+            |json_bytes| (json_bytes.as_bytes().into(), Direction::Reverse, 1),
+        ),
+    };
+
+    Ok((prefix, from_key, direction, skip))
 }
