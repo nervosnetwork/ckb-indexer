@@ -1,4 +1,4 @@
-use crate::indexer::{Indexer, Key, KeyPrefix, Value, SCRIPT_SERIALIZE_OFFSET};
+use crate::indexer::{self, Indexer, Key, KeyPrefix, Value, SCRIPT_SERIALIZE_OFFSET};
 use crate::store::{IteratorDirection, RocksdbStore, Store};
 use ckb_jsonrpc_types::{
     BlockNumber, BlockView, Capacity, CellOutput, JsonBytes, LocalNode, OutPoint, Script, Uint32,
@@ -69,7 +69,7 @@ impl Service {
             match rpc_client.local_node_info().wait() {
                 Ok(local_node_info) => {
                     break local_node_info.version > "0.36".to_owned();
-                },
+                }
                 Err(err) => {
                     error!("cannot get local_node_info from ckb node: {}", err);
                     thread::sleep(self.poll_interval);
@@ -391,11 +391,6 @@ impl IndexerRpc for IndexerRpcImpl {
         limit: Uint32,
         after_cursor: Option<JsonBytes>,
     ) -> Result<Pagination<Tx>> {
-        if search_key.filter.is_some() {
-            return Err(Error::invalid_params(
-                "doesn't support search_key.filter parameter",
-            ));
-        }
         let (prefix, from_key, direction, skip) = build_query_options(
             &search_key,
             KeyPrefix::TxLockScript,
@@ -403,6 +398,37 @@ impl IndexerRpc for IndexerRpcImpl {
             order,
             after_cursor,
         )?;
+
+        let (filter_script, filter_block_range) = if let Some(filter) = search_key.filter.as_ref() {
+            if filter.args_len.is_some() {
+                return Err(Error::invalid_params(
+                    "doesn't support search_key.filter.args_len parameter",
+                ));
+            }
+            if filter.output_data_len_range.is_some() {
+                return Err(Error::invalid_params(
+                    "doesn't support search_key.filter.output_data_len_range parameter",
+                ));
+            }
+            if filter.output_capacity_range.is_some() {
+                return Err(Error::invalid_params(
+                    "doesn't support search_key.filter.output_capacity_range parameter",
+                ));
+            }
+            let filter_script: Option<packed::Script> =
+                filter.script.as_ref().map(|script| script.clone().into());
+            let filter_block_range: Option<[core::BlockNumber; 2]> =
+                filter.block_range.map(|r| [r[0].into(), r[1].into()]);
+            (filter_script, filter_block_range)
+        } else {
+            (None, None)
+        };
+
+        let filter_script_type = match search_key.script_type {
+            ScriptType::Lock => ScriptType::Type,
+            ScriptType::Type => ScriptType::Lock,
+        };
+
         let mode = IteratorMode::From(from_key.as_ref(), direction);
         let snapshot = self.store.inner().snapshot();
         let iter = snapshot.iterator(mode).skip(skip);
@@ -414,7 +440,7 @@ impl IndexerRpc for IndexerRpcImpl {
 
         let txs = kvs
             .iter()
-            .map(|(key, value)| {
+            .filter_map(|(key, value)| {
                 let tx_hash = packed::Byte32::from_slice(value).expect("stored tx hash");
                 let block_number = u64::from_be_bytes(
                     key[key.len() - 17..key.len() - 9]
@@ -437,13 +463,66 @@ impl IndexerRpc for IndexerRpcImpl {
                     IOType::Output
                 };
 
-                Tx {
+                if let Some(filter_script) = filter_script.as_ref() {
+                    match filter_script_type {
+                        ScriptType::Lock => {
+                            if snapshot
+                                .get(
+                                    Key::TxLockScript(
+                                        &filter_script,
+                                        block_number,
+                                        tx_index,
+                                        io_index,
+                                        match io_type {
+                                            IOType::Input => indexer::IOType::Input,
+                                            IOType::Output => indexer::IOType::Output,
+                                        },
+                                    )
+                                    .into_vec(),
+                                )
+                                .expect("get TxLockScript should be OK")
+                                .is_none()
+                            {
+                                return None;
+                            }
+                        }
+                        ScriptType::Type => {
+                            if snapshot
+                                .get(
+                                    Key::TxTypeScript(
+                                        &filter_script,
+                                        block_number,
+                                        tx_index,
+                                        io_index,
+                                        match io_type {
+                                            IOType::Input => indexer::IOType::Input,
+                                            IOType::Output => indexer::IOType::Output,
+                                        },
+                                    )
+                                    .into_vec(),
+                                )
+                                .expect("get TxTypeScript should be OK")
+                                .is_none()
+                            {
+                                return None;
+                            }
+                        }
+                    }
+                }
+
+                if let Some([r0, r1]) = filter_block_range {
+                    if block_number < r0 || block_number >= r1 {
+                        return None;
+                    }
+                }
+
+                Some(Tx {
                     tx_hash: tx_hash.unpack(),
                     block_number: block_number.into(),
                     tx_index: tx_index.into(),
                     io_index: io_index.into(),
                     io_type,
-                }
+                })
             })
             .collect::<Vec<_>>();
 
