@@ -64,12 +64,17 @@ impl Service {
     pub fn poll(&self, rpc_client: gen_client::Client) {
         let indexer = Indexer::new(self.store.clone(), 100, 1000);
         // 0.37.0 and above supports hex format
-        let use_hex_format = rpc_client
-            .local_node_info()
-            .wait()
-            .expect("call rpc local_node_info should be OK")
-            .version
-            > "0.36".to_owned();
+        let use_hex_format = loop {
+            match rpc_client.local_node_info().wait() {
+                Ok(local_node_info) => {
+                    break local_node_info.version > "0.36".to_owned();
+                },
+                Err(err) => {
+                    error!("cannot get local_node_info from ckb node: {}", err);
+                    thread::sleep(self.poll_interval);
+                }
+            }
+        };
 
         loop {
             if let Some((tip_number, tip_hash)) = indexer.tip().expect("get tip should be OK") {
