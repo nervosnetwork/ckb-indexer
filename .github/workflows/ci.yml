@@ -30,9 +30,8 @@ jobs:
     - name: Install windows dependencies (scoop)
       run: |
         iwr -useb get.scoop.sh | iex
-        echo "::add-path::$($HOME)/scoop/shims"
         scoop install llvm
-        echo "::set-env name=LIBCLANG_PATH::$($HOME)/scoop/apps/llvm/current/bin"
+        echo "LIBCLANG_PATH=$($HOME)/scoop/apps/llvm/current/bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       if: matrix.os == 'windows-latest'
     - name: Build
       run: cargo build --verbose
