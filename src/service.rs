@@ -71,6 +71,10 @@ impl Service {
                     break local_node_info.version > "0.36".to_owned();
                 }
                 Err(err) => {
+                    // < 0.32.0 compatibility
+                    if format!("#{}", err).contains("missing field") {
+                        break false;
+                    }
                     error!("cannot get local_node_info from ckb node: {}", err);
                     thread::sleep(self.poll_interval);
                 }
