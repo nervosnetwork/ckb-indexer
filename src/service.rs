@@ -1,4 +1,4 @@
-use crate::indexer::{self, Indexer, Key, KeyPrefix, Value, SCRIPT_SERIALIZE_OFFSET};
+use crate::indexer::{self, extract_raw_data, Indexer, Key, KeyPrefix, Value};
 use crate::store::{IteratorDirection, RocksdbStore, Store};
 use ckb_jsonrpc_types::{
     BlockNumber, BlockView, Capacity, CellOutput, JsonBytes, LocalNode, OutPoint, Script, Uint32,
@@ -188,14 +188,12 @@ pub trait IndexerRpc {
 pub struct SearchKey {
     script: Script,
     script_type: ScriptType,
-    args_len: Option<Uint32>,
     filter: Option<SearchKeyFilter>,
 }
 
 #[derive(Deserialize, Default)]
 pub struct SearchKeyFilter {
     script: Option<Script>,
-    args_len: Option<Uint32>,
     output_data_len_range: Option<[Uint64; 2]>,
     output_capacity_range: Option<[Uint64; 2]>,
     block_range: Option<[BlockNumber; 2]>,
@@ -308,15 +306,11 @@ impl IndexerRpc for IndexerRpcImpl {
         let snapshot = self.store.inner().snapshot();
         let iter = snapshot.iterator(mode).skip(skip);
 
-        let kvs = iter
-            .take(limit.value() as usize)
+        let mut last_key = Vec::new();
+        let cells = iter
             .take_while(|(key, _value)| key.starts_with(&prefix))
-            .collect::<Vec<_>>();
-
-        let cells = kvs
-            .iter()
             .filter_map(|(key, value)| {
-                let tx_hash = packed::Byte32::from_slice(value).expect("stored tx hash");
+                let tx_hash = packed::Byte32::from_slice(&value).expect("stored tx hash");
                 let index =
                     u32::from_be_bytes(key[key.len() - 4..].try_into().expect("stored index"));
                 let out_point = packed::OutPoint::new(tx_hash, index);
@@ -330,7 +324,8 @@ impl IndexerRpc for IndexerRpcImpl {
                 if let Some(prefix) = filter_prefix.as_ref() {
                     match filter_script_type {
                         ScriptType::Lock => {
-                            if !output.lock().as_slice()[SCRIPT_SERIALIZE_OFFSET..]
+                            if !extract_raw_data(&output.lock())
+                                .as_slice()
                                 .starts_with(prefix)
                             {
                                 return None;
@@ -338,7 +333,8 @@ impl IndexerRpc for IndexerRpcImpl {
                         }
                         ScriptType::Type => {
                             if output.type_().is_none()
-                                || !output.type_().as_slice()[SCRIPT_SERIALIZE_OFFSET..]
+                                || !extract_raw_data(&output.type_().to_opt().unwrap())
+                                    .as_slice()
                                     .starts_with(prefix)
                             {
                                 return None;
@@ -366,6 +362,8 @@ impl IndexerRpc for IndexerRpcImpl {
                     }
                 }
 
+                last_key = key.to_vec();
+
                 Some(Cell {
                     output: output.into(),
                     output_data: output_data.into(),
@@ -374,17 +372,12 @@ impl IndexerRpc for IndexerRpcImpl {
                     tx_index: tx_index.into(),
                 })
             })
-            .collect::<Vec<Cell>>();
-
-        let last_cursor = kvs
-            .last()
-            .map_or_else(JsonBytes::default, |(last_key, _last_value)| {
-                JsonBytes::from_vec(last_key.clone().into())
-            });
+            .take(limit.value() as usize)
+            .collect::<Vec<_>>();
 
         Ok(Pagination {
             objects: cells,
-            last_cursor,
+            last_cursor: JsonBytes::from_vec(last_key),
         })
     }
 
@@ -404,11 +397,6 @@ impl IndexerRpc for IndexerRpcImpl {
         )?;
 
         let (filter_script, filter_block_range) = if let Some(filter) = search_key.filter.as_ref() {
-            if filter.args_len.is_some() {
-                return Err(Error::invalid_params(
-                    "doesn't support search_key.filter.args_len parameter",
-                ));
-            }
             if filter.output_data_len_range.is_some() {
                 return Err(Error::invalid_params(
                     "doesn't support search_key.filter.output_data_len_range parameter",
@@ -437,15 +425,11 @@ impl IndexerRpc for IndexerRpcImpl {
         let snapshot = self.store.inner().snapshot();
         let iter = snapshot.iterator(mode).skip(skip);
 
-        let kvs = iter
+        let mut last_key = Vec::new();
+        let txs = iter
             .take_while(|(key, _value)| key.starts_with(&prefix))
-            .take(limit.value() as usize)
-            .collect::<Vec<_>>();
-
-        let txs = kvs
-            .iter()
             .filter_map(|(key, value)| {
-                let tx_hash = packed::Byte32::from_slice(value).expect("stored tx hash");
+                let tx_hash = packed::Byte32::from_slice(&value).expect("stored tx hash");
                 let block_number = u64::from_be_bytes(
                     key[key.len() - 17..key.len() - 9]
                         .try_into()
@@ -520,6 +504,7 @@ impl IndexerRpc for IndexerRpcImpl {
                     }
                 }
 
+                last_key = key.to_vec();
                 Some(Tx {
                     tx_hash: tx_hash.unpack(),
                     block_number: block_number.into(),
@@ -528,17 +513,12 @@ impl IndexerRpc for IndexerRpcImpl {
                     io_type,
                 })
             })
+            .take(limit.value() as usize)
             .collect::<Vec<_>>();
-
-        let last_cursor = kvs
-            .last()
-            .map_or_else(JsonBytes::default, |(last_key, _last_value)| {
-                JsonBytes::from_vec(last_key.clone().into())
-            });
 
         Ok(Pagination {
             objects: txs,
-            last_cursor,
+            last_cursor: JsonBytes::from_vec(last_key),
         })
     }
 
@@ -581,15 +561,18 @@ impl IndexerRpc for IndexerRpcImpl {
                 if let Some(prefix) = filter_prefix.as_ref() {
                     match filter_script_type {
                         ScriptType::Lock => {
-                            if !output.lock().as_slice()[SCRIPT_SERIALIZE_OFFSET..]
+                            if !extract_raw_data(&output.lock())
+                                .as_slice()
                                 .starts_with(prefix)
                             {
                                 return None;
                             }
                         }
                         ScriptType::Type => {
-                            if !output.type_().as_slice()[SCRIPT_SERIALIZE_OFFSET..]
-                                .starts_with(prefix)
+                            if output.type_().is_none()
+                                || !extract_raw_data(&output.type_().to_opt().unwrap())
+                                    .as_slice()
+                                    .starts_with(prefix)
                             {
                                 return None;
                             }
@@ -650,26 +633,14 @@ fn build_query_options(
         ScriptType::Type => vec![type_prefix as u8],
     };
     let script: packed::Script = search_key.script.clone().into();
-    let args_len = search_key
-        .args_len
-        .map_or_else(|| script.args().len(), |args_len| args_len.value() as usize);
-    if args_len < script.args().len() {
-        return Err(Error::invalid_params(
-            "args_len should be greater than or equal to script.args.len",
-        ));
-    }
+    let args_len = script.args().len();
     if args_len > MAX_PREFIX_SEARCH_SIZE {
         return Err(Error::invalid_params(format!(
-            "args_len should be less than {}",
+            "search_key.script.args len should be less than {}",
             MAX_PREFIX_SEARCH_SIZE
         )));
     }
-    prefix.extend_from_slice(script.code_hash().as_slice());
-    prefix.extend_from_slice(script.hash_type().as_slice());
-    if args_len > 0 {
-        prefix.extend_from_slice(&(args_len as u32).to_le_bytes());
-        prefix.extend_from_slice(&script.args().raw_data());
-    }
+    prefix.extend_from_slice(extract_raw_data(&script).as_slice());
 
     let (from_key, direction, skip) = match order {
         Order::Asc => after_cursor.map_or_else(
@@ -679,7 +650,11 @@ fn build_query_options(
         Order::Desc => after_cursor.map_or_else(
             || {
                 (
-                    [prefix.clone(), vec![0xff; MAX_PREFIX_SEARCH_SIZE]].concat(),
+                    [
+                        prefix.clone(),
+                        vec![0xff; MAX_PREFIX_SEARCH_SIZE - args_len],
+                    ]
+                    .concat(),
                     Direction::Reverse,
                     0,
                 )
@@ -703,32 +678,19 @@ fn build_filter_options(
     let SearchKey {
         script: _,
         script_type: _,
-        args_len: _,
         filter,
     } = search_key;
     let filter = filter.unwrap_or_default();
     let filter_script_prefix = if let Some(script) = filter.script {
         let script: packed::Script = script.into();
-        let args_len = filter
-            .args_len
-            .map_or_else(|| script.args().len(), |args_len| args_len.value() as usize);
-        if args_len < script.args().len() {
-            return Err(Error::invalid_params(
-                "args_len should be greater than or equal to script.args.len",
-            ));
-        }
-        if args_len > MAX_PREFIX_SEARCH_SIZE {
+        if script.args().len() > MAX_PREFIX_SEARCH_SIZE {
             return Err(Error::invalid_params(format!(
-                "args_len should be less than {}",
+                "search_key.filter.script.args len should be less than {}",
                 MAX_PREFIX_SEARCH_SIZE
             )));
         }
-        let mut prefix = Vec::from(script.code_hash().as_slice());
-        prefix.extend_from_slice(script.hash_type().as_slice());
-        if args_len > 0 {
-            prefix.extend_from_slice(&(args_len as u32).to_le_bytes());
-            prefix.extend_from_slice(&script.args().raw_data());
-        }
+        let mut prefix = Vec::new();
+        prefix.extend_from_slice(extract_raw_data(&script).as_slice());
         Some(prefix)
     } else {
         None
