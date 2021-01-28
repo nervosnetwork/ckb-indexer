@@ -1,5 +1,5 @@
 use ckb_indexer::service::Service;
-use clap::{App, Arg};
+use clap::{crate_version, App, Arg};
 use futures::Future;
 use hyper::rt;
 use jsonrpc_core_client::transports::http;
@@ -8,7 +8,8 @@ fn main() {
     env_logger::Builder::from_default_env()
         .format_timestamp(Some(env_logger::fmt::TimestampPrecision::Millis))
         .init();
-    let matches = App::new("ckb indexer")
+    let matches = App::new("ckb-indexer")
+        .version(crate_version!())
         .arg(
             Arg::with_name("ckb_uri")
                 .short("c")
