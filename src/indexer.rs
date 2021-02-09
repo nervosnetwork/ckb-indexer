@@ -14,8 +14,6 @@ pub enum IOType {
     Input,
     Output,
 }
-// Script serialized slice body offset: (1 total size + 3 items offset) * 4 bytes
-pub const SCRIPT_SERIALIZE_OFFSET: usize = 16;
 
 /// +--------------+--------------------+--------------------------+
 /// | KeyPrefix::  | Key::              | Value::                  |
@@ -82,24 +80,15 @@ impl<'a> Into<Vec<u8>> for Key<'a> {
             }
             Key::CellLockScript(script, block_number, tx_index, output_index) => {
                 encoded.push(KeyPrefix::CellLockScript as u8);
-                encoded.extend_from_slice(&script.as_slice()[SCRIPT_SERIALIZE_OFFSET..]);
-                encoded.extend_from_slice(&block_number.to_be_bytes());
-                encoded.extend_from_slice(&tx_index.to_be_bytes());
-                encoded.extend_from_slice(&output_index.to_be_bytes());
+                append_key(&mut encoded, script, block_number, tx_index, output_index);
             }
             Key::CellTypeScript(script, block_number, tx_index, output_index) => {
                 encoded.push(KeyPrefix::CellTypeScript as u8);
-                encoded.extend_from_slice(&script.as_slice()[SCRIPT_SERIALIZE_OFFSET..]);
-                encoded.extend_from_slice(&block_number.to_be_bytes());
-                encoded.extend_from_slice(&tx_index.to_be_bytes());
-                encoded.extend_from_slice(&output_index.to_be_bytes());
+                append_key(&mut encoded, script, block_number, tx_index, output_index);
             }
             Key::TxLockScript(script, block_number, tx_index, io_index, io_type) => {
                 encoded.push(KeyPrefix::TxLockScript as u8);
-                encoded.extend_from_slice(&script.as_slice()[SCRIPT_SERIALIZE_OFFSET..]);
-                encoded.extend_from_slice(&block_number.to_be_bytes());
-                encoded.extend_from_slice(&tx_index.to_be_bytes());
-                encoded.extend_from_slice(&io_index.to_be_bytes());
+                append_key(&mut encoded, script, block_number, tx_index, io_index);
                 match io_type {
                     IOType::Input => encoded.push(0),
                     IOType::Output => encoded.push(1),
@@ -107,10 +96,7 @@ impl<'a> Into<Vec<u8>> for Key<'a> {
             }
             Key::TxTypeScript(script, block_number, tx_index, io_index, io_type) => {
                 encoded.push(KeyPrefix::TxTypeScript as u8);
-                encoded.extend_from_slice(&script.as_slice()[SCRIPT_SERIALIZE_OFFSET..]);
-                encoded.extend_from_slice(&block_number.to_be_bytes());
-                encoded.extend_from_slice(&tx_index.to_be_bytes());
-                encoded.extend_from_slice(&io_index.to_be_bytes());
+                append_key(&mut encoded, script, block_number, tx_index, io_index);
                 match io_type {
                     IOType::Input => encoded.push(0),
                     IOType::Output => encoded.push(1),
@@ -128,6 +114,29 @@ impl<'a> Into<Vec<u8>> for Key<'a> {
         }
         encoded
     }
+}
+
+fn append_key(
+    encoded: &mut Vec<u8>,
+    script: &Script,
+    block_number: u64,
+    tx_index: u32,
+    io_index: u32,
+) {
+    encoded.extend_from_slice(&extract_raw_data(script));
+    encoded.extend_from_slice(&block_number.to_be_bytes());
+    encoded.extend_from_slice(&tx_index.to_be_bytes());
+    encoded.extend_from_slice(&io_index.to_be_bytes());
+}
+
+// a helper fn extracts script fields raw data
+pub fn extract_raw_data(script: &Script) -> Vec<u8> {
+    [
+        script.code_hash().as_slice(),
+        script.hash_type().as_slice(),
+        &script.args().raw_data(),
+    ]
+    .concat()
 }
 
 impl<'a> Into<Vec<u8>> for Value<'a> {
@@ -615,7 +624,8 @@ where
         prefix: KeyPrefix,
     ) -> Result<Vec<OutPoint>, Error> {
         let mut start_key = vec![prefix as u8];
-        start_key.extend_from_slice(&script.as_slice()[SCRIPT_SERIALIZE_OFFSET..]);
+        start_key.extend_from_slice(&extract_raw_data(script));
+
         let iter = self.store.iter(&start_key, IteratorDirection::Forward)?;
         Ok(iter
             .take_while(|(key, _)| key.starts_with(&start_key))
@@ -649,7 +659,8 @@ where
         prefix: KeyPrefix,
     ) -> Result<Vec<Byte32>, Error> {
         let mut start_key = vec![prefix as u8];
-        start_key.extend_from_slice(&script.as_slice()[SCRIPT_SERIALIZE_OFFSET..]);
+        start_key.extend_from_slice(&extract_raw_data(script));
+
         let iter = self.store.iter(&start_key, IteratorDirection::Forward)?;
         Ok(iter
             .take_while(|(key, _)| key.starts_with(&start_key))

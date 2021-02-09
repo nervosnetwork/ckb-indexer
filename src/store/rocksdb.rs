@@ -145,6 +145,9 @@ mod tests {
         batch.put(&[0, 0, 1], &[0, 0, 1]).unwrap();
         batch.put(&[1, 0, 0], &[1, 0, 0]).unwrap();
         batch.put(&[1, 0, 1], &[1, 0, 1]).unwrap();
+        batch.put(&[2, 0, 0, 1], &[2, 0, 0, 1]).unwrap();
+        batch.put(&[2, 0, 1, 1], &[2, 0, 1, 1]).unwrap();
+        batch.put(&[2, 0, 2, 1], &[2, 0, 2, 1]).unwrap();
         batch.commit().unwrap();
 
         let mut iter = store.iter(&[0, 0, 1], IteratorDirection::Forward).unwrap();
@@ -167,5 +170,11 @@ mod tests {
             iter.next().map(|i| (i.0.to_vec(), i.1.to_vec()))
         );
         assert!(iter.next().is_none());
+
+        let mut iter = store.iter(&[2, 0, 1], IteratorDirection::Reverse).unwrap();
+        assert_eq!(
+            Some((vec![2, 0, 0, 1], vec![2, 0, 0, 1])),
+            iter.next().map(|i| (i.0.to_vec(), i.1.to_vec()))
+        );
     }
 }
