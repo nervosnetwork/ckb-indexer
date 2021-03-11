@@ -1,6 +1,6 @@
 ## Introduce
 
-All the [indexing](https://github.com/nervosnetwork/ckb/tree/develop/rpc#indexer) RPCs built in the CKB will be deprecated soon. This is a standalone service for creating cell indexes.
+All the [indexing](https://github.com/nervosnetwork/ckb/tree/develop/rpc#indexer) RPCs built in the CKB has been deprecated since v0.36.0 and removed in v0.40.0. This is a standalone service for creating cell and transaction indexes as an alternate solution.
 
 ## Usage
 
