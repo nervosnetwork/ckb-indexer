@@ -1,5 +1,5 @@
 use super::{Batch, Error, IteratorDirection, IteratorItem, Store};
-use rocksdb::{Direction, IteratorMode, WriteBatch, DB};
+use rocksdb::{prelude::*, Direction, IteratorMode, WriteBatch, DB};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -33,7 +33,7 @@ impl Store for RocksdbStore {
         &self,
         from_key: K,
         mode: IteratorDirection,
-    ) -> Result<Box<dyn Iterator<Item = IteratorItem>>, Error> {
+    ) -> Result<Box<dyn Iterator<Item = IteratorItem> + '_>, Error> {
         let mode = IteratorMode::From(
             from_key.as_ref(),
             match mode {
@@ -69,7 +69,7 @@ impl Batch for RocksdbBatch {
     }
 
     fn commit(self) -> Result<(), Error> {
-        self.db.write(self.wb)?;
+        self.db.write(&self.wb)?;
         Ok(())
     }
 }

@@ -13,7 +13,7 @@ use jsonrpc_http_server::{Server, ServerBuilder};
 use jsonrpc_server_utils::cors::AccessControlAllowOrigin;
 use jsonrpc_server_utils::hosts::DomainsValidation;
 use log::{error, info, trace};
-use rocksdb::{Direction, IteratorMode};
+use rocksdb::{prelude::*, Direction, IteratorMode};
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use std::net::ToSocketAddrs;

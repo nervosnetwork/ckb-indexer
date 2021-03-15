@@ -23,7 +23,7 @@ pub trait Store {
         &self,
         from_key: K,
         direction: IteratorDirection,
-    ) -> Result<Box<dyn Iterator<Item = IteratorItem>>, Error>;
+    ) -> Result<Box<dyn Iterator<Item = IteratorItem> + '_>, Error>;
     fn batch(&self) -> Result<Self::Batch, Error>;
 }
 
