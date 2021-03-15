@@ -22,7 +22,7 @@ jobs:
         build: [linux, macos, windows]
         include:
           - build: linux
-            os: ubuntu-latest
+            os: ubuntu-18.04
             rust: 1.46.0
           - build: macos
             os: macos-latest
