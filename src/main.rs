@@ -1,6 +1,6 @@
 use ckb_indexer::service::Service;
 use clap::{crate_version, App, Arg};
-use jsonrpc_client_transports::transports::http;
+use jsonrpc_core_client::transports::http;
 
 #[tokio::main]
 async fn main() {
