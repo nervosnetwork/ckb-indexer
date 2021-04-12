@@ -1,9 +1,13 @@
 use crate::store::{Batch, Error as StoreError, IteratorDirection, Store};
+
+use anyhow::Result;
 use ckb_types::{
     core::{BlockNumber, BlockView},
     packed::{Byte32, Bytes, CellOutput, OutPoint, Script},
     prelude::*,
 };
+use derive_more::Display;
+
 use std::collections::HashMap;
 use std::convert::TryInto;
 
@@ -205,6 +209,7 @@ pub struct DetailedLiveCell {
     pub cell_data: Bytes,
 }
 
+#[derive(Clone)]
 pub struct Indexer<S> {
     store: S,
     // number of blocks to keep for rollback and forking, for example:
@@ -231,7 +236,7 @@ impl<S> Indexer<S>
 where
     S: Store,
 {
-    pub fn append(&self, block: &BlockView) -> Result<(), Error> {
+    pub fn append(&self, block: &BlockView) -> Result<()> {
         let mut batch = self.store.batch()?;
         // insert block transactions
         batch.put_kv(
@@ -399,7 +404,7 @@ where
         Ok(())
     }
 
-    pub fn rollback(&self) -> Result<(), Error> {
+    pub fn rollback(&self) -> Result<()> {
         if let Some((block_number, block_hash)) = self.tip()? {
             let mut batch = self.store.batch()?;
             let txs = Value::parse_transactions_value(
@@ -544,7 +549,7 @@ where
         Ok(())
     }
 
-    pub fn tip(&self) -> Result<Option<(BlockNumber, Byte32)>, Error> {
+    pub fn tip(&self) -> Result<Option<(BlockNumber, Byte32)>> {
         let mut iter = self
             .store
             .iter(&[KeyPrefix::Header as u8 + 1], IteratorDirection::Reverse)?;
@@ -556,7 +561,7 @@ where
         }))
     }
 
-    pub fn prune(&self) -> Result<(), Error> {
+    pub fn prune(&self) -> Result<()> {
         let (tip_number, _tip_hash) = self.tip()?.expect("stored tip");
         if tip_number > self.keep_num {
             let prune_to_block = tip_number - self.keep_num;
@@ -604,17 +609,11 @@ where
         Ok(())
     }
 
-    pub fn get_live_cells_by_lock_script(
-        &self,
-        lock_script: &Script,
-    ) -> Result<Vec<OutPoint>, Error> {
+    pub fn get_live_cells_by_lock_script(&self, lock_script: &Script) -> Result<Vec<OutPoint>> {
         self.get_live_cells_by_script(lock_script, KeyPrefix::CellLockScript)
     }
 
-    pub fn get_live_cells_by_type_script(
-        &self,
-        type_script: &Script,
-    ) -> Result<Vec<OutPoint>, Error> {
+    pub fn get_live_cells_by_type_script(&self, type_script: &Script) -> Result<Vec<OutPoint>> {
         self.get_live_cells_by_script(type_script, KeyPrefix::CellTypeScript)
     }
 
@@ -622,7 +621,7 @@ where
         &self,
         script: &Script,
         prefix: KeyPrefix,
-    ) -> Result<Vec<OutPoint>, Error> {
+    ) -> Result<Vec<OutPoint>> {
         let mut start_key = vec![prefix as u8];
         start_key.extend_from_slice(&extract_raw_data(script));
 
@@ -639,17 +638,11 @@ where
             .collect())
     }
 
-    pub fn get_transactions_by_lock_script(
-        &self,
-        lock_script: &Script,
-    ) -> Result<Vec<Byte32>, Error> {
+    pub fn get_transactions_by_lock_script(&self, lock_script: &Script) -> Result<Vec<Byte32>> {
         self.get_transactions_by_script(lock_script, KeyPrefix::TxLockScript)
     }
 
-    pub fn get_transactions_by_type_script(
-        &self,
-        type_script: &Script,
-    ) -> Result<Vec<Byte32>, Error> {
+    pub fn get_transactions_by_type_script(&self, type_script: &Script) -> Result<Vec<Byte32>> {
         self.get_transactions_by_script(type_script, KeyPrefix::TxTypeScript)
     }
 
@@ -657,7 +650,7 @@ where
         &self,
         script: &Script,
         prefix: KeyPrefix,
-    ) -> Result<Vec<Byte32>, Error> {
+    ) -> Result<Vec<Byte32>> {
         let mut start_key = vec![prefix as u8];
         start_key.extend_from_slice(&extract_raw_data(script));
 
@@ -673,10 +666,7 @@ where
     /// * CellOutput
     /// * Cell data
     /// * Block hash in which the cell is created
-    pub fn get_detailed_live_cell(
-        &self,
-        out_point: &OutPoint,
-    ) -> Result<Option<DetailedLiveCell>, Error> {
+    pub fn get_detailed_live_cell(&self, out_point: &OutPoint) -> Result<Option<DetailedLiveCell>> {
         let key_vec = Key::OutPoint(&out_point).into_vec();
         let (block_number, tx_index, cell_output, cell_data) = match self.store.get(&key_vec)? {
             Some(stored_cell) => Value::parse_cell_value(&stored_cell),
@@ -707,7 +697,7 @@ where
         }))
     }
 
-    pub fn report(&self) -> Result<(), Error> {
+    pub fn report(&self) -> Result<()> {
         let iter = self.store.iter(&[], IteratorDirection::Forward)?;
         let mut statistics: HashMap<u8, (usize, usize, usize)> = HashMap::new();
         for (key, value) in iter {
@@ -721,10 +711,13 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum Error {
+    #[display(fmt = "Store Error {:?}", _0)]
     StoreError(String),
 }
+
+impl std::error::Error for Error {}
 
 impl From<StoreError> for Error {
     fn from(e: StoreError) -> Error {

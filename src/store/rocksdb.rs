@@ -1,5 +1,7 @@
 use super::{Batch, Error, IteratorDirection, IteratorItem, Store};
+use anyhow::Result;
 use rocksdb::{prelude::*, Direction, IteratorMode, WriteBatch, DB};
+
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -15,14 +17,14 @@ impl Store for RocksdbStore {
         Self { db }
     }
 
-    fn get<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>, Error> {
+    fn get<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
         self.db
             .get(key.as_ref())
             .map(|v| v.map(|vi| vi.to_vec()))
             .map_err(Into::into)
     }
 
-    fn exists<K: AsRef<[u8]>>(&self, key: K) -> Result<bool, Error> {
+    fn exists<K: AsRef<[u8]>>(&self, key: K) -> Result<bool> {
         self.db
             .get(key.as_ref())
             .map(|v| v.is_some())
@@ -33,7 +35,7 @@ impl Store for RocksdbStore {
         &self,
         from_key: K,
         mode: IteratorDirection,
-    ) -> Result<Box<dyn Iterator<Item = IteratorItem> + '_>, Error> {
+    ) -> Result<Box<dyn Iterator<Item = IteratorItem> + '_>> {
         let mode = IteratorMode::From(
             from_key.as_ref(),
             match mode {
@@ -44,7 +46,7 @@ impl Store for RocksdbStore {
         Ok(Box::new(self.db.iterator(mode)) as Box<_>)
     }
 
-    fn batch(&self) -> Result<Self::Batch, Error> {
+    fn batch(&self) -> Result<Self::Batch> {
         Ok(Self::Batch {
             db: Arc::clone(&self.db),
             wb: WriteBatch::default(),
