@@ -120,7 +120,7 @@ impl Service {
     }
 }
 
-async fn get_block_by_number(
+pub async fn get_block_by_number(
     rpc_client: &gen_client::Client,
     block_number: u64,
     use_hex_format: bool,
@@ -258,8 +258,8 @@ pub struct Pagination<T> {
     last_cursor: JsonBytes,
 }
 
-struct IndexerRpcImpl {
-    store: RocksdbStore,
+pub struct IndexerRpcImpl {
+    pub store: RocksdbStore,
 }
 
 impl IndexerRpc for IndexerRpcImpl {
