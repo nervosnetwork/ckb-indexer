@@ -1,11 +1,11 @@
 use crate::indexer::{self, extract_raw_data, Indexer, Key, KeyPrefix, Value};
 use crate::store::{IteratorDirection, RocksdbStore, Store};
+
 use ckb_jsonrpc_types::{
     BlockNumber, BlockView, Capacity, CellOutput, JsonBytes, LocalNode, OutPoint, Script, Uint32,
     Uint64,
 };
 use ckb_types::{core, packed, prelude::*, H256};
-use futures::future::Future;
 use jsonrpc_core::{Error, IoHandler, Result};
 use jsonrpc_core_client::RpcError;
 use jsonrpc_derive::rpc;
@@ -15,6 +15,7 @@ use jsonrpc_server_utils::hosts::DomainsValidation;
 use log::{error, info, trace};
 use rocksdb::{prelude::*, Direction, IteratorMode};
 use serde::{Deserialize, Serialize};
+
 use std::convert::TryInto;
 use std::net::ToSocketAddrs;
 use std::thread;
@@ -62,11 +63,11 @@ impl Service {
             .expect("Start Jsonrpc HTTP service")
     }
 
-    pub fn poll(&self, rpc_client: gen_client::Client) {
+    pub async fn poll(&self, rpc_client: gen_client::Client) {
         let indexer = Indexer::new(self.store.clone(), 100, 1000);
         // 0.37.0 and above supports hex format
         let use_hex_format = loop {
-            match rpc_client.local_node_info().wait() {
+            match rpc_client.local_node_info().await {
                 Ok(local_node_info) => {
                     break local_node_info.version > "0.36".to_owned();
                 }
@@ -83,7 +84,7 @@ impl Service {
 
         loop {
             if let Some((tip_number, tip_hash)) = indexer.tip().expect("get tip should be OK") {
-                match get_block_by_number(&rpc_client, tip_number + 1, use_hex_format) {
+                match get_block_by_number(&rpc_client, tip_number + 1, use_hex_format).await {
                     Ok(Some(block)) => {
                         if block.parent_hash() == tip_hash {
                             info!("append {}, {}", block.number(), block.hash());
@@ -103,7 +104,7 @@ impl Service {
                     }
                 }
             } else {
-                match get_block_by_number(&rpc_client, 0, use_hex_format) {
+                match get_block_by_number(&rpc_client, 0, use_hex_format).await {
                     Ok(Some(block)) => indexer.append(&block).expect("append block should be OK"),
                     Ok(None) => {
                         error!("ckb node returns an empty genesis block");
@@ -119,15 +120,15 @@ impl Service {
     }
 }
 
-fn get_block_by_number(
+pub async fn get_block_by_number(
     rpc_client: &gen_client::Client,
     block_number: u64,
     use_hex_format: bool,
-) -> ::std::result::Result<Option<core::BlockView>, RpcError> {
+) -> std::result::Result<Option<core::BlockView>, RpcError> {
     if use_hex_format {
         rpc_client
             .get_block_by_number_with_verbosity(block_number.into(), 0.into())
-            .wait()
+            .await
             .map(|opt| {
                 opt.map(|json_bytes| {
                     ckb_types::packed::Block::new_unchecked(json_bytes.into_bytes()).into_view()
@@ -136,7 +137,7 @@ fn get_block_by_number(
     } else {
         rpc_client
             .get_block_by_number(block_number.into())
-            .wait()
+            .await
             .map(|opt| opt.map(Into::into))
     }
 }
@@ -257,8 +258,8 @@ pub struct Pagination<T> {
     last_cursor: JsonBytes,
 }
 
-struct IndexerRpcImpl {
-    store: RocksdbStore,
+pub struct IndexerRpcImpl {
+    pub store: RocksdbStore,
 }
 
 impl IndexerRpc for IndexerRpcImpl {
