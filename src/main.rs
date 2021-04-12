@@ -1,10 +1,9 @@
 use ckb_indexer::service::Service;
 use clap::{crate_version, App, Arg};
-use futures::Future;
-use hyper::rt;
-use jsonrpc_core_client::transports::http;
+use jsonrpc_client_transports::transports::http;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     env_logger::Builder::from_default_env()
         .format_timestamp(Some(env_logger::fmt::TimestampPrecision::Millis))
         .init();
@@ -36,26 +35,21 @@ fn main() {
         matches.value_of("listen_uri").unwrap_or("127.0.0.1:8116"),
         std::time::Duration::from_secs(2),
     );
+
     let rpc_server = service.start();
+    let mut uri = matches
+        .value_of("ckb_uri")
+        .unwrap_or("http://127.0.0.1:8114")
+        .to_owned();
+    if !uri.starts_with("http") {
+        uri = format!("http://{}", uri);
+    }
 
-    rt::run(rt::lazy(move || {
-        let mut uri = matches
-            .value_of("ckb_uri")
-            .unwrap_or("http://127.0.0.1:8114")
-            .to_owned();
-        if !uri.starts_with("http") {
-            uri = format!("http://{}", uri);
-        }
+    let client = http::connect(&uri)
+        .await
+        .expect(&format!("Failed to connect to {:?}", uri));
 
-        http::connect(&uri)
-            .and_then(move |client| {
-                service.poll(client);
-                Ok(())
-            })
-            .map_err(|e| {
-                println!("Error: {:?}", e);
-            })
-    }));
+    service.poll(client).await;
 
     rpc_server.close();
 }
