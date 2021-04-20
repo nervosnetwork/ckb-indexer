@@ -1,6 +1,5 @@
 use crate::store::{Batch, Error as StoreError, IteratorDirection, Store};
 
-use anyhow::Result;
 use ckb_types::{
     core::{BlockNumber, BlockView},
     packed::{Byte32, Bytes, CellOutput, OutPoint, Script},
@@ -236,7 +235,7 @@ impl<S> Indexer<S>
 where
     S: Store,
 {
-    pub fn append(&self, block: &BlockView) -> Result<()> {
+    pub fn append(&self, block: &BlockView) -> Result<(), Error> {
         let mut batch = self.store.batch()?;
         // insert block transactions
         batch.put_kv(
@@ -404,7 +403,7 @@ where
         Ok(())
     }
 
-    pub fn rollback(&self) -> Result<()> {
+    pub fn rollback(&self) -> Result<(), Error> {
         if let Some((block_number, block_hash)) = self.tip()? {
             let mut batch = self.store.batch()?;
             let txs = Value::parse_transactions_value(
@@ -549,7 +548,7 @@ where
         Ok(())
     }
 
-    pub fn tip(&self) -> Result<Option<(BlockNumber, Byte32)>> {
+    pub fn tip(&self) -> Result<Option<(BlockNumber, Byte32)>, Error> {
         let mut iter = self
             .store
             .iter(&[KeyPrefix::Header as u8 + 1], IteratorDirection::Reverse)?;
@@ -561,7 +560,7 @@ where
         }))
     }
 
-    pub fn prune(&self) -> Result<()> {
+    pub fn prune(&self) -> Result<(), Error> {
         let (tip_number, _tip_hash) = self.tip()?.expect("stored tip");
         if tip_number > self.keep_num {
             let prune_to_block = tip_number - self.keep_num;
@@ -609,11 +608,17 @@ where
         Ok(())
     }
 
-    pub fn get_live_cells_by_lock_script(&self, lock_script: &Script) -> Result<Vec<OutPoint>> {
+    pub fn get_live_cells_by_lock_script(
+        &self,
+        lock_script: &Script,
+    ) -> Result<Vec<OutPoint>, Error> {
         self.get_live_cells_by_script(lock_script, KeyPrefix::CellLockScript)
     }
 
-    pub fn get_live_cells_by_type_script(&self, type_script: &Script) -> Result<Vec<OutPoint>> {
+    pub fn get_live_cells_by_type_script(
+        &self,
+        type_script: &Script,
+    ) -> Result<Vec<OutPoint>, Error> {
         self.get_live_cells_by_script(type_script, KeyPrefix::CellTypeScript)
     }
 
@@ -621,7 +626,7 @@ where
         &self,
         script: &Script,
         prefix: KeyPrefix,
-    ) -> Result<Vec<OutPoint>> {
+    ) -> Result<Vec<OutPoint>, Error> {
         let mut start_key = vec![prefix as u8];
         start_key.extend_from_slice(&extract_raw_data(script));
 
@@ -638,11 +643,17 @@ where
             .collect())
     }
 
-    pub fn get_transactions_by_lock_script(&self, lock_script: &Script) -> Result<Vec<Byte32>> {
+    pub fn get_transactions_by_lock_script(
+        &self,
+        lock_script: &Script,
+    ) -> Result<Vec<Byte32>, Error> {
         self.get_transactions_by_script(lock_script, KeyPrefix::TxLockScript)
     }
 
-    pub fn get_transactions_by_type_script(&self, type_script: &Script) -> Result<Vec<Byte32>> {
+    pub fn get_transactions_by_type_script(
+        &self,
+        type_script: &Script,
+    ) -> Result<Vec<Byte32>, Error> {
         self.get_transactions_by_script(type_script, KeyPrefix::TxTypeScript)
     }
 
@@ -650,7 +661,7 @@ where
         &self,
         script: &Script,
         prefix: KeyPrefix,
-    ) -> Result<Vec<Byte32>> {
+    ) -> Result<Vec<Byte32>, Error> {
         let mut start_key = vec![prefix as u8];
         start_key.extend_from_slice(&extract_raw_data(script));
 
@@ -666,7 +677,10 @@ where
     /// * CellOutput
     /// * Cell data
     /// * Block hash in which the cell is created
-    pub fn get_detailed_live_cell(&self, out_point: &OutPoint) -> Result<Option<DetailedLiveCell>> {
+    pub fn get_detailed_live_cell(
+        &self,
+        out_point: &OutPoint,
+    ) -> Result<Option<DetailedLiveCell>, Error> {
         let key_vec = Key::OutPoint(&out_point).into_vec();
         let (block_number, tx_index, cell_output, cell_data) = match self.store.get(&key_vec)? {
             Some(stored_cell) => Value::parse_cell_value(&stored_cell),
@@ -697,7 +711,7 @@ where
         }))
     }
 
-    pub fn report(&self) -> Result<()> {
+    pub fn report(&self) -> Result<(), Error> {
         let iter = self.store.iter(&[], IteratorDirection::Forward)?;
         let mut statistics: HashMap<u8, (usize, usize, usize)> = HashMap::new();
         for (key, value) in iter {

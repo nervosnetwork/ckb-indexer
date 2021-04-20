@@ -2,16 +2,13 @@ mod rocksdb;
 
 pub use self::rocksdb::RocksdbStore;
 
-use anyhow::Result;
-use derive_more::Display;
+use thiserror::Error;
 
-#[derive(Debug, Display)]
+#[derive(Error, Debug)]
 pub enum Error {
-    #[display(fmt = "DB Error {:?}", _0)]
+    #[error("DB error {0}")]
     DBError(String),
 }
-
-impl std::error::Error for Error {}
 
 pub type IteratorItem = (Box<[u8]>, Box<[u8]>);
 
@@ -22,15 +19,20 @@ pub enum IteratorDirection {
 
 pub trait Store {
     type Batch: Batch;
+
     fn new(path: &str) -> Self;
-    fn get<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>>;
-    fn exists<K: AsRef<[u8]>>(&self, key: K) -> Result<bool>;
+
+    fn get<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>, Error>;
+
+    fn exists<K: AsRef<[u8]>>(&self, key: K) -> Result<bool, Error>;
+
     fn iter<K: AsRef<[u8]>>(
         &self,
         from_key: K,
         direction: IteratorDirection,
-    ) -> Result<Box<dyn Iterator<Item = IteratorItem> + '_>>;
-    fn batch(&self) -> Result<Self::Batch>;
+    ) -> Result<Box<dyn Iterator<Item = IteratorItem> + '_>, Error>;
+
+    fn batch(&self) -> Result<Self::Batch, Error>;
 }
 
 pub trait Batch {
