@@ -5,7 +5,7 @@ use ckb_types::{
     packed::{Byte32, Bytes, CellOutput, OutPoint, Script},
     prelude::*,
 };
-use derive_more::Display;
+use thiserror::Error;
 
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -725,13 +725,11 @@ where
     }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Error)]
 pub enum Error {
-    #[display(fmt = "Store Error {:?}", _0)]
+    #[error("Store Error {0}")]
     StoreError(String),
 }
-
-impl std::error::Error for Error {}
 
 impl From<StoreError> for Error {
     fn from(e: StoreError) -> Error {
