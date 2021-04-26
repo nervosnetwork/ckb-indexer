@@ -1,9 +1,12 @@
 use crate::store::{Batch, Error as StoreError, IteratorDirection, Store};
+
 use ckb_types::{
     core::{BlockNumber, BlockView},
     packed::{Byte32, Bytes, CellOutput, OutPoint, Script},
     prelude::*,
 };
+use thiserror::Error;
+
 use std::collections::HashMap;
 use std::convert::TryInto;
 
@@ -205,6 +208,7 @@ pub struct DetailedLiveCell {
     pub cell_data: Bytes,
 }
 
+#[derive(Clone)]
 pub struct Indexer<S> {
     store: S,
     // number of blocks to keep for rollback and forking, for example:
@@ -721,8 +725,9 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
+    #[error("Store Error {0}")]
     StoreError(String),
 }
 
