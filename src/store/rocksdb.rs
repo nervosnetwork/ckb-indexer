@@ -1,8 +1,8 @@
 use super::{Batch, Error, IteratorDirection, IteratorItem, Store};
 
-use rocksdb::{prelude::*, Direction, IteratorMode, WriteBatch, DB};
+use rocksdb::{checkpoint::Checkpoint, prelude::*, Direction, IteratorMode, WriteBatch, DB};
 
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
 #[derive(Clone)]
 pub struct RocksdbStore {
@@ -51,6 +51,13 @@ impl Store for RocksdbStore {
             db: Arc::clone(&self.db),
             wb: WriteBatch::default(),
         })
+    }
+}
+
+impl RocksdbStore {
+    pub fn checkpoint<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
+        Checkpoint::new(self.db.as_ref())?.create_checkpoint(path)?;
+        Ok(())
     }
 }
 
