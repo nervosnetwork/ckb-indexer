@@ -200,6 +200,7 @@ impl<'a> Value<'a> {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct DetailedLiveCell {
     pub block_number: BlockNumber,
     pub block_hash: Byte32,
