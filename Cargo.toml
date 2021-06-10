@@ -9,8 +9,8 @@ edition = "2018"
 [dependencies]
 thiserror = "1.0"
 rocksdb = { package = "ckb-rocksdb", version = "=0.15.1" }
-ckb-types = "0.40.0"
-ckb-jsonrpc-types = "0.40.0"
+ckb-types = ">=0.40.0"
+ckb-jsonrpc-types = ">=0.40.0"
 jsonrpc-core = "17.0"
 jsonrpc-core-client = { version = "17.0", features = ["http", "tls"] }
 jsonrpc-derive = "17.0"
