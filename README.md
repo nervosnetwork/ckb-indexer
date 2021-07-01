@@ -237,3 +237,25 @@ echo '{
 | curl -H 'content-type: application/json' -d @- \
 http://localhost:8116
 ```
+
+### `get_indexer_info`
+
+Returns the indexer service information.
+
+#### Returns
+
+    version - indexer version
+
+#### Examples
+
+```bash
+echo '{
+    "id": 2,
+    "jsonrpc": "2.0",
+    "method": "get_indexer_info",
+    "params": []
+}' \
+| tr -d '\n' \
+| curl -H 'content-type: application/json' -d @- \
+http://localhost:8116
+```

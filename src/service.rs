@@ -27,15 +27,22 @@ pub struct Service {
     store: RocksdbStore,
     poll_interval: Duration,
     listen_address: String,
+    version: String,
 }
 
 impl Service {
-    pub fn new(store_path: &str, listen_address: &str, poll_interval: Duration) -> Self {
+    pub fn new(
+        store_path: &str,
+        listen_address: &str,
+        poll_interval: Duration,
+        version: String,
+    ) -> Self {
         let store = RocksdbStore::new(store_path);
         Self {
             store,
             listen_address: listen_address.to_string(),
             poll_interval,
+            version,
         }
     }
 
@@ -43,6 +50,7 @@ impl Service {
         let mut io_handler = IoHandler::new();
         let rpc_impl = IndexerRpcImpl {
             store: self.store.clone(),
+            version: self.version.clone(),
         };
         io_handler.extend_with(rpc_impl.to_delegate());
 
@@ -183,6 +191,9 @@ pub trait IndexerRpc {
 
     #[rpc(name = "get_cells_capacity")]
     fn get_cells_capacity(&self, search_key: SearchKey) -> Result<Option<CellsCapacity>>;
+
+    #[rpc(name = "get_indexer_info")]
+    fn get_indexer_info(&self) -> Result<IndexerInfo>;
 }
 
 #[derive(Deserialize)]
@@ -228,6 +239,11 @@ pub struct CellsCapacity {
 }
 
 #[derive(Serialize)]
+pub struct IndexerInfo {
+    version: String,
+}
+
+#[derive(Serialize)]
 pub struct Cell {
     output: CellOutput,
     output_data: JsonBytes,
@@ -260,6 +276,7 @@ pub struct Pagination<T> {
 
 pub struct IndexerRpcImpl {
     pub store: RocksdbStore,
+    pub version: String,
 }
 
 impl IndexerRpc for IndexerRpcImpl {
@@ -617,6 +634,12 @@ impl IndexerRpc for IndexerRpcImpl {
             .into(),
         }))
     }
+
+    fn get_indexer_info(&self) -> Result<IndexerInfo> {
+        Ok(IndexerInfo {
+            version: self.version.clone(),
+        })
+    }
 }
 
 const MAX_PREFIX_SEARCH_SIZE: usize = u16::max_value() as usize;
@@ -744,7 +767,10 @@ mod tests {
     fn rpc() {
         let store = new_store("rpc");
         let indexer = Indexer::new(store.clone(), 10, 100);
-        let rpc = IndexerRpcImpl { store };
+        let rpc = IndexerRpcImpl {
+            store,
+            version: "0.2.1".to_owned(),
+        };
 
         // setup test data
         let lock_script1 = ScriptBuilder::default()
@@ -1114,5 +1140,8 @@ mod tests {
             capacity.capacity.value(),
             "last block live cell"
         );
+
+        // test get_indexer_info rpc
+        assert_eq!("0.2.1", rpc.get_indexer_info().unwrap().version);
     }
 }
