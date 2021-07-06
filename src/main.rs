@@ -34,6 +34,7 @@ async fn main() {
         matches.value_of("store_path").expect("required arg"),
         matches.value_of("listen_uri").unwrap_or("127.0.0.1:8116"),
         std::time::Duration::from_secs(2),
+        crate_version!().to_string(),
     );
 
     let rpc_server = service.start();
