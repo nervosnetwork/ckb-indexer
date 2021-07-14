@@ -185,7 +185,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-indexer"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "ckb-jsonrpc-types",
  "ckb-rocksdb",
