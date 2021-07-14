@@ -560,6 +560,23 @@ where
         }))
     }
 
+    pub fn get_block_hash(&self, block_number: BlockNumber) -> Result<Option<Byte32>, Error> {
+        let mut key_prefix_header = vec![KeyPrefix::Header as u8];
+        key_prefix_header.extend_from_slice(&block_number.to_be_bytes());
+        Ok(
+            match self
+                .store
+                .iter(&key_prefix_header, IteratorDirection::Forward)?
+                .next()
+            {
+                Some((key, _v)) if key.starts_with(&key_prefix_header) => {
+                    Some(Byte32::from_slice(&key[9..]).expect("stored block key"))
+                }
+                _ => None,
+            },
+        )
+    }
+
     pub fn prune(&self) -> Result<(), Error> {
         let (tip_number, _tip_hash) = self.tip()?.expect("stored tip");
         if tip_number > self.keep_num {
@@ -1474,5 +1491,33 @@ mod tests {
                 .unwrap()
                 .len()
         );
+    }
+
+    #[test]
+    fn get_block_hash() {
+        let indexer = new_indexer::<RocksdbStore>("get_block_hash");
+
+        let block_hashes: Vec<Byte32> = (0..10)
+            .map(|i| {
+                let cellbase = TransactionBuilder::default()
+                    .input(CellInput::new_cellbase_input(i))
+                    .build();
+                let block = BlockBuilder::default()
+                    .transaction(cellbase)
+                    .header(HeaderBuilder::default().number(i.pack()).build())
+                    .build();
+                indexer.append(&block).unwrap();
+                block.hash()
+            })
+            .collect();
+
+        block_hashes.into_iter().enumerate().for_each(|(i, hash)| {
+            assert_eq!(
+                hash,
+                indexer.get_block_hash(i as BlockNumber).unwrap().unwrap()
+            )
+        });
+
+        assert!(indexer.get_block_hash(10).unwrap().is_none());
     }
 }
