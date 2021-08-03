@@ -2,8 +2,7 @@ use crate::indexer::{self, extract_raw_data, Indexer, Key, KeyPrefix, Value};
 use crate::store::{IteratorDirection, RocksdbStore, Store};
 
 use ckb_jsonrpc_types::{
-    BlockNumber, BlockView, Capacity, CellOutput, JsonBytes, LocalNode, OutPoint, Script, Uint32,
-    Uint64,
+    BlockNumber, Capacity, CellOutput, JsonBytes, LocalNode, OutPoint, Script, Uint32, Uint64,
 };
 use ckb_types::{core, packed, prelude::*, H256};
 use jsonrpc_core::{Error, IoHandler, Result};
@@ -15,6 +14,7 @@ use jsonrpc_server_utils::hosts::DomainsValidation;
 use log::{error, info, trace};
 use rocksdb::{prelude::*, Direction, IteratorMode};
 use serde::{Deserialize, Serialize};
+use version_compare::Version;
 
 use std::convert::TryInto;
 use std::net::ToSocketAddrs;
@@ -72,29 +72,37 @@ impl Service {
     }
 
     pub async fn poll(&self, rpc_client: gen_client::Client) {
+        let incompatible_version = Version::from("0.99.99").expect("checked version str");
         // assume that long fork will not happen >= 100 blocks.
         let keep_num = 100;
         let indexer = Indexer::new(self.store.clone(), keep_num, 1000);
-        // 0.37.0 and above supports hex format
-        let use_hex_format = loop {
+
+        loop {
             match rpc_client.local_node_info().await {
                 Ok(local_node_info) => {
-                    break local_node_info.version > "0.36".to_owned();
+                    let ckb_version =
+                        Version::from(&local_node_info.version).expect("checked version str");
+                    if ckb_version > incompatible_version {
+                        break;
+                    } else {
+                        error!("only ckb version 0.100.0 and above are supported");
+                    }
                 }
                 Err(err) => {
-                    // < 0.32.0 compatibility
+                    // < 0.32.0 compatibility, no `version` field in `local_node_info` rpc.
                     if format!("#{}", err).contains("missing field") {
-                        break false;
+                        error!("only ckb version 0.100.0 and above are supported");
+                    } else {
+                        error!("cannot get local_node_info from ckb node: {}", err);
                     }
-                    error!("cannot get local_node_info from ckb node: {}", err);
-                    thread::sleep(self.poll_interval);
                 }
             }
-        };
+            thread::sleep(self.poll_interval);
+        }
 
         loop {
             if let Some((tip_number, tip_hash)) = indexer.tip().expect("get tip should be OK") {
-                match get_block_by_number(&rpc_client, tip_number + 1, use_hex_format).await {
+                match get_block_by_number(&rpc_client, tip_number + 1).await {
                     Ok(Some(block)) => {
                         if block.parent_hash() == tip_hash {
                             info!("append {}, {}", block.number(), block.hash());
@@ -102,13 +110,7 @@ impl Service {
                         } else {
                             // Long fork detection
                             let longest_fork_number = tip_number.saturating_sub(keep_num);
-                            match get_block_by_number(
-                                &rpc_client,
-                                longest_fork_number,
-                                use_hex_format,
-                            )
-                            .await
-                            {
+                            match get_block_by_number(&rpc_client, longest_fork_number).await {
                                 Ok(Some(block)) => {
                                     let stored_block_hash = indexer
                                         .get_block_hash(longest_fork_number)
@@ -143,7 +145,7 @@ impl Service {
                     }
                 }
             } else {
-                match get_block_by_number(&rpc_client, 0, use_hex_format).await {
+                match get_block_by_number(&rpc_client, 0).await {
                     Ok(Some(block)) => indexer.append(&block).expect("append block should be OK"),
                     Ok(None) => {
                         error!("ckb node returns an empty genesis block");
@@ -162,30 +164,19 @@ impl Service {
 pub async fn get_block_by_number(
     rpc_client: &gen_client::Client,
     block_number: u64,
-    use_hex_format: bool,
 ) -> std::result::Result<Option<core::BlockView>, RpcError> {
-    if use_hex_format {
-        rpc_client
-            .get_block_by_number_with_verbosity(block_number.into(), 0.into())
-            .await
-            .map(|opt| {
-                opt.map(|json_bytes| {
-                    ckb_types::packed::Block::new_unchecked(json_bytes.into_bytes()).into_view()
-                })
+    rpc_client
+        .get_block_by_number_with_verbosity(block_number.into(), 0.into())
+        .await
+        .map(|opt| {
+            opt.map(|json_bytes| {
+                ckb_types::packed::Block::new_unchecked(json_bytes.into_bytes()).into_view()
             })
-    } else {
-        rpc_client
-            .get_block_by_number(block_number.into())
-            .await
-            .map(|opt| opt.map(Into::into))
-    }
+        })
 }
 
 #[rpc(client)]
 pub trait CkbRpc {
-    #[rpc(name = "get_block_by_number")]
-    fn get_block_by_number(&self, number: BlockNumber) -> Result<Option<BlockView>>;
-
     #[rpc(name = "get_block_by_number")]
     fn get_block_by_number_with_verbosity(
         &self,
@@ -1174,5 +1165,16 @@ mod tests {
 
         // test get_indexer_info rpc
         assert_eq!("0.2.1", rpc.get_indexer_info().unwrap().version);
+    }
+
+    #[test]
+    fn test_compare_version() {
+        let incompatible_version = Version::from("0.99.99").unwrap();
+        let v1 = Version::from("0.100.0-pre (292921b 2021-07-30)").unwrap();
+        let v2 = Version::from("0.100.0 (1234567 2021-10-18)").unwrap();
+        let v3 = Version::from("0.43.1 (15427e0 2021-07-16)").unwrap();
+        assert!(v1 > incompatible_version);
+        assert!(v2 > incompatible_version);
+        assert!(!(v3 > incompatible_version));
     }
 }
