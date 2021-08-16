@@ -4,10 +4,23 @@ All the [indexing](https://github.com/nervosnetwork/ckb/tree/develop/rpc#indexer
 
 ## Usage
 
+Build binary from source
+
 ```bash
 cargo build --release
+```
+
+Connect to default ckb rpc service at `http://127.0.0.1:8114` and stores the indexer data at `/tmp/ckb-indexer-test` folder
+```bash
 RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test
 ```
+
+Or connect to ckb rpc service at `tcp::/127.0.0.1:18114`
+```bash
+RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test -c tcp::/127.0.0.1:18114
+```
+
+Run `ckb-indexer --help` for more information
 
 ## RPC
 
