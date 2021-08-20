@@ -20,6 +20,11 @@ Or connect to ckb rpc service at `tcp::/127.0.0.1:18114`
 RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test -c tcp::/127.0.0.1:18114
 ```
 
+Indexing the pending txs in the ckb tx-pool
+```bash
+RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test -c tcp::/127.0.0.1:18114 --index-tx-pool
+```
+
 Run `ckb-indexer --help` for more information
 
 ## RPC
