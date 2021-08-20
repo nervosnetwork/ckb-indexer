@@ -15,9 +15,14 @@ Connect to default ckb rpc service at `http://127.0.0.1:8114` and stores the ind
 RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test
 ```
 
-Or connect to ckb rpc service at `tcp::/127.0.0.1:18114`
+Or connect to ckb rpc service at `tcp://127.0.0.1:18114`
 ```bash
-RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test -c tcp::/127.0.0.1:18114
+RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test -c tcp://127.0.0.1:18114
+```
+
+Indexing the pending txs in the ckb tx-pool
+```bash
+RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test -c tcp://127.0.0.1:18114 --index-tx-pool
 ```
 
 Run `ckb-indexer --help` for more information

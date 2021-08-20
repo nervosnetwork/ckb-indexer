@@ -25,7 +25,7 @@ async fn main() {
         .arg(
             Arg::with_name("ckb_uri")
                 .short("c")
-                .help("CKB rpc service uri, supports http and tcp, for example: `http://127.0.0.1:8114` or `tcp::/127.0.0.1:18114`")
+                .help("CKB rpc service uri, supports http and tcp, for example: `http://127.0.0.1:8114` or `tcp://127.0.0.1:18114`")
                 .takes_value(true),
         )
         .arg(
@@ -69,8 +69,8 @@ async fn main() {
         .unwrap_or("http://127.0.0.1:8114")
         .to_owned();
 
-    if uri.starts_with("tcp:://") {
-        let uri = uri.split_off(7);
+    if uri.starts_with("tcp://") {
+        let uri = uri.split_off(6);
         let codec = StreamCodec::stream_incoming();
         let tcp_stream = TcpStream::connect(&uri)
             .await
@@ -189,11 +189,10 @@ async fn main() {
         }
 
         service.poll(rpc_channel.into()).await;
-    } else if !uri.starts_with("http") {
+    } else {
         if index_tx_pool {
             error!("indexing the pending txs in the ckb tx-pool is only supported when connecting to ckb rpc service with tcp protocol")
         } else {
-            uri = format!("http://{}", uri);
             let client = http::connect(&uri)
                 .await
                 .expect(&format!("Failed to connect to {:?}", uri));
