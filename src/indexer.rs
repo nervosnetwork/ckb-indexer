@@ -1,4 +1,7 @@
-use crate::store::{Batch, Error as StoreError, IteratorDirection, Store};
+use crate::{
+    pool::Pool,
+    store::{Batch, Error as StoreError, IteratorDirection, Store},
+};
 
 use ckb_types::{
     core::{BlockNumber, BlockView},
@@ -7,8 +10,11 @@ use ckb_types::{
 };
 use thiserror::Error;
 
-use std::collections::HashMap;
 use std::convert::TryInto;
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 
 pub type TxIndex = u32;
 pub type OutputIndex = u32;
@@ -215,14 +221,23 @@ pub struct Indexer<S> {
     // keep_num: 100, current tip: 321, will prune ConsumedOutPoint / TxHash kv pair whiches block_number <= 221
     keep_num: u64,
     prune_interval: u64,
+    // an optional overlay to index the pending txs in the ckb tx pool
+    // currently only supports removals of dead cells from the pending txs
+    pool: Option<Arc<RwLock<Pool>>>,
 }
 
 impl<S> Indexer<S> {
-    pub fn new(store: S, keep_num: u64, prune_interval: u64) -> Self {
+    pub fn new(
+        store: S,
+        keep_num: u64,
+        prune_interval: u64,
+        pool: Option<Arc<RwLock<Pool>>>,
+    ) -> Self {
         Self {
             store,
             keep_num,
             prune_interval,
+            pool,
         }
     }
 
@@ -251,6 +266,7 @@ where
 
         let block_number = block.number();
         let transactions = block.transactions();
+        let pool = self.pool.as_ref().map(|p| p.write().expect("acquire lock"));
         for (tx_index, tx) in transactions.iter().enumerate() {
             let tx_index = tx_index as u32;
             let tx_hash = tx.hash();
@@ -396,6 +412,10 @@ where
         }
 
         batch.commit()?;
+
+        if let Some(mut pool) = pool {
+            pool.transactions_commited(&transactions);
+        }
 
         if block_number % self.prune_interval == 0 {
             self.prune()?;
@@ -774,7 +794,7 @@ mod tests {
     fn new_indexer<S: Store>(prefix: &str) -> Indexer<S> {
         let tmp_dir = tempfile::Builder::new().prefix(prefix).tempdir().unwrap();
         let store = S::new(tmp_dir.path().to_str().unwrap());
-        Indexer::new(store, 10, 1)
+        Indexer::new(store, 10, 1, None)
     }
 
     #[test]

@@ -1,4 +1,5 @@
 use crate::indexer::{self, extract_raw_data, Indexer, Key, KeyPrefix, Value};
+use crate::pool::Pool;
 use crate::store::{IteratorDirection, RocksdbStore, Store};
 
 use ckb_jsonrpc_types::{
@@ -18,6 +19,7 @@ use version_compare::Version;
 
 use std::convert::TryInto;
 use std::net::ToSocketAddrs;
+use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
@@ -25,6 +27,7 @@ use std::time::Duration;
 /// because some rpc need rocksdb snapshot funtion which has lifetime mark and is hard to wrap in a trait
 pub struct Service {
     store: RocksdbStore,
+    pool: Option<Arc<RwLock<Pool>>>,
     poll_interval: Duration,
     listen_address: String,
     version: String,
@@ -33,6 +36,7 @@ pub struct Service {
 impl Service {
     pub fn new(
         store_path: &str,
+        pool: Option<Arc<RwLock<Pool>>>,
         listen_address: &str,
         poll_interval: Duration,
         version: String,
@@ -40,6 +44,7 @@ impl Service {
         let store = RocksdbStore::new(store_path);
         Self {
             store,
+            pool,
             listen_address: listen_address.to_string(),
             poll_interval,
             version,
@@ -50,6 +55,7 @@ impl Service {
         let mut io_handler = IoHandler::new();
         let rpc_impl = IndexerRpcImpl {
             store: self.store.clone(),
+            pool: self.pool.clone(),
             version: self.version.clone(),
         };
         io_handler.extend_with(rpc_impl.to_delegate());
@@ -75,7 +81,7 @@ impl Service {
         let incompatible_version = Version::from("0.99.99").expect("checked version str");
         // assume that long fork will not happen >= 100 blocks.
         let keep_num = 100;
-        let indexer = Indexer::new(self.store.clone(), keep_num, 1000);
+        let indexer = Indexer::new(self.store.clone(), keep_num, 1000, self.pool.clone());
 
         loop {
             match rpc_client.local_node_info().await {
@@ -298,6 +304,7 @@ pub struct Pagination<T> {
 
 pub struct IndexerRpcImpl {
     pub store: RocksdbStore,
+    pub pool: Option<Arc<RwLock<Pool>>>,
     pub version: String,
 }
 
@@ -347,6 +354,10 @@ impl IndexerRpc for IndexerRpcImpl {
         let iter = snapshot.iterator(mode).skip(skip);
 
         let mut last_key = Vec::new();
+        let pool = self
+            .pool
+            .as_ref()
+            .map(|pool| pool.read().expect("acquire lock"));
         let cells = iter
             .take_while(|(key, _value)| key.starts_with(&prefix))
             .filter_map(|(key, value)| {
@@ -354,6 +365,13 @@ impl IndexerRpc for IndexerRpcImpl {
                 let index =
                     u32::from_be_bytes(key[key.len() - 4..].try_into().expect("stored index"));
                 let out_point = packed::OutPoint::new(tx_hash, index);
+                if pool
+                    .as_ref()
+                    .map(|pool| pool.is_consumed_by_pool_tx(&out_point))
+                    .unwrap_or_default()
+                {
+                    return None;
+                }
                 let (block_number, tx_index, output, output_data) = Value::parse_cell_value(
                     &snapshot
                         .get(Key::OutPoint(&out_point).into_vec())
@@ -583,6 +601,10 @@ impl IndexerRpc for IndexerRpcImpl {
         let mode = IteratorMode::From(from_key.as_ref(), direction);
         let snapshot = self.store.inner().snapshot();
         let iter = snapshot.iterator(mode).skip(skip);
+        let pool = self
+            .pool
+            .as_ref()
+            .map(|pool| pool.read().expect("acquire lock"));
 
         let capacity: u64 = iter
             .take_while(|(key, _value)| key.starts_with(&prefix))
@@ -591,6 +613,13 @@ impl IndexerRpc for IndexerRpcImpl {
                 let index =
                     u32::from_be_bytes(key[key.len() - 4..].try_into().expect("stored index"));
                 let out_point = packed::OutPoint::new(tx_hash, index);
+                if pool
+                    .as_ref()
+                    .map(|pool| pool.is_consumed_by_pool_tx(&out_point))
+                    .unwrap_or_default()
+                {
+                    return None;
+                }
                 let (block_number, _tx_index, output, output_data) = Value::parse_cell_value(
                     &snapshot
                         .get(Key::OutPoint(&out_point).into_vec())
@@ -788,9 +817,11 @@ mod tests {
     #[test]
     fn rpc() {
         let store = new_store("rpc");
-        let indexer = Indexer::new(store.clone(), 10, 100);
+        let pool = Arc::new(RwLock::new(Pool::new()));
+        let indexer = Indexer::new(store.clone(), 10, 100, None);
         let rpc = IndexerRpcImpl {
             store,
+            pool: Some(pool.clone()),
             version: "0.2.1".to_owned(),
         };
 
@@ -1165,6 +1196,67 @@ mod tests {
 
         // test get_indexer_info rpc
         assert_eq!("0.2.1", rpc.get_indexer_info().unwrap().version);
+
+        // test get_cells rpc with tx-pool overlay
+        let pool_tx = TransactionBuilder::default()
+            .input(CellInput::new(OutPoint::new(pre_tx0.hash(), 0), 0))
+            .output(
+                CellOutputBuilder::default()
+                    .capacity(capacity_bytes!(1000).pack())
+                    .lock(lock_script1.clone())
+                    .type_(Some(type_script1.clone()).pack())
+                    .build(),
+            )
+            .output_data(Default::default())
+            .build();
+        pool.write().unwrap().new_transaction(&pool_tx);
+
+        let cells_page_1 = rpc
+            .get_cells(
+                SearchKey {
+                    script: lock_script1.clone().into(),
+                    script_type: ScriptType::Lock,
+                    filter: None,
+                },
+                Order::Asc,
+                150.into(),
+                None,
+            )
+            .unwrap();
+        let cells_page_2 = rpc
+            .get_cells(
+                SearchKey {
+                    script: lock_script1.clone().into(),
+                    script_type: ScriptType::Lock,
+                    filter: None,
+                },
+                Order::Asc,
+                150.into(),
+                Some(cells_page_1.last_cursor),
+            )
+            .unwrap();
+
+        assert_eq!(
+            total_blocks as usize,
+            cells_page_1.objects.len() + cells_page_2.objects.len(),
+            "total size should be cellbase cells count (last block live cell was consumed by a pending tx in the pool)"
+        );
+
+        // test get_cells_capacity rpc with tx-pool overlay
+        let capacity = rpc
+            .get_cells_capacity(SearchKey {
+                script: lock_script1.clone().into(),
+                script_type: ScriptType::Lock,
+                filter: None,
+            })
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            1000 * 100000000 * total_blocks,
+            capacity.capacity.value(),
+            "cellbases (last block live cell was consumed by a pending tx in the pool)"
+        );
     }
 
     #[test]
