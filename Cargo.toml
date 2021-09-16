@@ -1,6 +1,6 @@
 [package]
 name = "ckb-indexer"
-version = "0.3.0-rc1"
+version = "0.3.0"
 authors = ["quake <quake.wang@gmail.com>"]
 edition = "2018"
 
@@ -8,9 +8,9 @@ edition = "2018"
 
 [dependencies]
 thiserror = "1.0"
-rocksdb = { package = "ckb-rocksdb", version = "=0.15.1" }
-ckb-types = "=0.100.0-rc2"
-ckb-jsonrpc-types = "=0.100.0-rc2"
+rocksdb = { package = "ckb-rocksdb", version = "=0.16.0" }
+ckb-types = ">=0.100.0"
+ckb-jsonrpc-types = ">=0.100.0"
 jsonrpc-core = "18.0"
 jsonrpc-core-client = { version = "18.0", features = ["http", "tls"] }
 jsonrpc-derive = "18.0"
