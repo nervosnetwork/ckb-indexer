@@ -520,7 +520,7 @@ where
                                 generated_by_tx_index,
                                 out_point.index().unpack(),
                             ),
-                            Value::TxHash(&tx_hash),
+                            Value::TxHash(&out_point.tx_hash()),
                         )?;
                         batch.delete(
                             Key::TxLockScript(
@@ -540,7 +540,7 @@ where
                                     generated_by_tx_index,
                                     out_point.index().unpack(),
                                 ),
-                                Value::TxHash(&tx_hash),
+                                Value::TxHash(&out_point.tx_hash()),
                             )?;
                             batch.delete(
                                 Key::TxTypeScript(
@@ -1539,5 +1539,137 @@ mod tests {
         });
 
         assert!(indexer.get_block_hash(10).unwrap().is_none());
+    }
+
+    #[test]
+    fn rollback_block_should_update_lock_script_and_type_script_index_correctly() {
+        let indexer = new_indexer::<RocksdbStore>(
+            "rollback_block_should_update_lock_script_and_type_script_index_correctly",
+        );
+
+        let lock_script1 = ScriptBuilder::default()
+            .code_hash(H256(rand::random()).pack())
+            .hash_type(ScriptHashType::Data.into())
+            .args(Bytes::from(b"lock_script1".to_vec()).pack())
+            .build();
+
+        let type_script1 = ScriptBuilder::default()
+            .code_hash(H256(rand::random()).pack())
+            .hash_type(ScriptHashType::Data.into())
+            .args(Bytes::from(b"type_script1".to_vec()).pack())
+            .build();
+
+        let cellbase0 = TransactionBuilder::default()
+            .input(CellInput::new_cellbase_input(0))
+            .witness(Script::default().into_witness())
+            .output(
+                CellOutputBuilder::default()
+                    .capacity(capacity_bytes!(1000).pack())
+                    .lock(lock_script1.clone())
+                    .build(),
+            )
+            .output_data(Default::default())
+            .build();
+
+        let tx00 = TransactionBuilder::default()
+            .output(
+                CellOutputBuilder::default()
+                    .capacity(capacity_bytes!(1000).pack())
+                    .lock(lock_script1.clone())
+                    .type_(Some(type_script1.clone()).pack())
+                    .build(),
+            )
+            .output_data(Default::default())
+            .build();
+
+        let block0 = BlockBuilder::default()
+            .transaction(cellbase0.clone())
+            .transaction(tx00.clone())
+            .header(HeaderBuilder::default().number(0.pack()).build())
+            .build();
+        indexer.append(&block0).unwrap();
+
+        let cellbase1 = TransactionBuilder::default()
+            .input(CellInput::new_cellbase_input(1))
+            .witness(Script::default().into_witness())
+            .output(
+                CellOutputBuilder::default()
+                    .capacity(capacity_bytes!(1000).pack())
+                    .lock(lock_script1.clone())
+                    .build(),
+            )
+            .output_data(Default::default())
+            .build();
+
+        let tx10 = TransactionBuilder::default()
+            .input(CellInput::new(OutPoint::new(tx00.hash(), 0), 0))
+            .output(
+                CellOutputBuilder::default()
+                    .capacity(capacity_bytes!(1000).pack())
+                    .lock(lock_script1.clone())
+                    .type_(Some(type_script1.clone()).pack())
+                    .build(),
+            )
+            .output_data(Default::default())
+            .build();
+
+        let block1 = BlockBuilder::default()
+            .transaction(cellbase1)
+            .transaction(tx10.clone())
+            .header(
+                HeaderBuilder::default()
+                    .number(1.pack())
+                    .parent_hash(block0.hash())
+                    .build(),
+            )
+            .build();
+
+        indexer.append(&block1).unwrap();
+        assert_eq!(
+            3, // cellbase0, cellbase1, tx10
+            indexer
+                .get_live_cells_by_lock_script(&lock_script1)
+                .unwrap()
+                .len()
+        );
+        assert_eq!(
+            5, //cellbase0, cellbase1, tx00 (output), tx10(input and output)
+            indexer
+                .get_transactions_by_lock_script(&lock_script1)
+                .unwrap()
+                .len()
+        );
+
+        indexer.rollback().unwrap();
+
+        let live_cells = indexer
+            .get_live_cells_by_lock_script(&lock_script1)
+            .unwrap();
+        //cellbase0, tx00
+        assert_eq!(
+            vec![
+                OutPoint::new(cellbase0.hash(), 0),
+                OutPoint::new(tx00.hash(), 0)
+            ],
+            live_cells
+        );
+
+        let live_cells = indexer
+            .get_live_cells_by_type_script(&type_script1)
+            .unwrap();
+        //tx00 (output)
+        assert_eq!(vec![OutPoint::new(tx00.hash(), 0)], live_cells);
+
+        let transactions = indexer
+            .get_transactions_by_lock_script(&lock_script1)
+            .unwrap();
+        //cellbase0, tx00
+        assert_eq!(vec![cellbase0.hash(), tx00.hash()], transactions);
+
+        let transactions = indexer
+            .get_transactions_by_type_script(&type_script1)
+            .unwrap();
+        //tx00 (output)
+        assert_eq!(vec![tx00.hash()], transactions);
     }
 }
