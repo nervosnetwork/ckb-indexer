@@ -1100,7 +1100,7 @@ mod tests {
             .build();
 
         let block0 = BlockBuilder::default()
-            .transaction(cellbase0)
+            .transaction(cellbase0.clone())
             .transaction(tx00.clone())
             .transaction(tx01.clone())
             .header(HeaderBuilder::default().number(0.pack()).build())
@@ -1185,20 +1185,24 @@ mod tests {
         );
 
         indexer.rollback().unwrap();
+        let live_cells = indexer
+            .get_live_cells_by_lock_script(&lock_script1)
+            .unwrap();
+        //cellbase0, tx00
         assert_eq!(
-            2, // cellbase0, tx01 (output)
-            indexer
-                .get_live_cells_by_lock_script(&lock_script1)
-                .unwrap()
-                .len()
+            vec![
+                OutPoint::new(cellbase0.hash(), 0),
+                OutPoint::new(tx00.hash(), 0)
+            ],
+            live_cells
         );
-        assert_eq!(
-            2, // cellbase0, tx01 (output)
-            indexer
-                .get_transactions_by_lock_script(&lock_script1)
-                .unwrap()
-                .len()
-        );
+
+        let transactions = indexer
+            .get_transactions_by_lock_script(&lock_script1)
+            .unwrap();
+
+        //cellbase0, tx00
+        assert_eq!(vec![cellbase0.hash(), tx00.hash(),], transactions);
     }
 
     #[test]
