@@ -390,12 +390,18 @@ impl IndexerRpc for IndexerRpcImpl {
                             }
                         }
                         ScriptType::Type => {
-                            if output.type_().is_none()
-                                || !extract_raw_data(&output.type_().to_opt().unwrap())
-                                    .as_slice()
-                                    .starts_with(prefix)
-                            {
-                                return None;
+                            if prefix.is_empty() {
+                                if output.type_().is_some() {
+                                    return None;
+                                }
+                            } else {
+                                if output.type_().is_none()
+                                    || !extract_raw_data(&output.type_().to_opt().unwrap())
+                                        .as_slice()
+                                        .starts_with(prefix)
+                                {
+                                    return None;
+                                }
                             }
                         }
                     }
@@ -638,12 +644,18 @@ impl IndexerRpc for IndexerRpcImpl {
                             }
                         }
                         ScriptType::Type => {
-                            if output.type_().is_none()
-                                || !extract_raw_data(&output.type_().to_opt().unwrap())
-                                    .as_slice()
-                                    .starts_with(prefix)
-                            {
-                                return None;
+                            if prefix.is_empty() {
+                                if output.type_().is_some() {
+                                    return None;
+                                }
+                            } else {
+                                if output.type_().is_none()
+                                    || !extract_raw_data(&output.type_().to_opt().unwrap())
+                                        .as_slice()
+                                        .starts_with(prefix)
+                                {
+                                    return None;
+                                }
                             }
                         }
                     }
@@ -765,7 +777,9 @@ fn build_filter_options(
             )));
         }
         let mut prefix = Vec::new();
-        prefix.extend_from_slice(extract_raw_data(&script).as_slice());
+        if script != packed::ScriptBuilder::default().build() {
+            prefix.extend_from_slice(extract_raw_data(&script).as_slice());
+        }
         Some(prefix)
     } else {
         None
@@ -1080,7 +1094,7 @@ mod tests {
             )
             .unwrap();
 
-        let filter_empty_type_script_cells_page_1 = rpc
+        let filter_empty_type_script_cells_page_2 = rpc
             .get_cells(
                 SearchKey {
                     script: lock_script1.clone().into(),
@@ -1100,8 +1114,9 @@ mod tests {
 
         assert_eq!(
             total_blocks as usize,
-            filter_empty_type_script_cells_page_1.objects.len() + filter_empty_type_script_cells_page_1.objects.len(),
-            "total size should be cellbase cells count (no type script)"
+            filter_empty_type_script_cells_page_1.objects.len()
+                + filter_empty_type_script_cells_page_2.objects.len(),
+            "total size should be cellbase cells count (empty type script)"
         );
 
         // test get_transactions rpc
@@ -1219,6 +1234,26 @@ mod tests {
             1000 * 100000000 * (total_blocks + 1),
             capacity.capacity.value(),
             "cellbases + last block live cell"
+        );
+
+        let capacity = rpc
+            .get_cells_capacity(SearchKey {
+                script: lock_script1.clone().into(),
+                script_type: ScriptType::Lock,
+                filter: Some(SearchKeyFilter {
+                    script: Some(ScriptBuilder::default().build().into()),
+                    output_data_len_range: None,
+                    output_capacity_range: None,
+                    block_range: None,
+                }),
+            })
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            1000 * 100000000 * total_blocks,
+            capacity.capacity.value(),
+            "cellbases (empty type script)"
         );
 
         let capacity = rpc

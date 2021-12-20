@@ -137,6 +137,38 @@ echo '{
 http://localhost:8116
 ```
 
+get cells by lock script and filter by empty type script
+
+```bash
+echo '{
+    "id": 2,
+    "jsonrpc": "2.0",
+    "method": "get_cells",
+    "params": [
+        {
+            "script": {
+                "code_hash": "0x86a1c6987a4acbe1a887cca4c9dd2ac9fcb07405bbeda51b861b18bbf7492c4b",
+                "hash_type": "type",
+                "args": "0xb728659574c85e88d957bd643bb747a00f018d72"
+            },
+            "script_type": "lock",
+            "filter": {
+                "script": {
+                    "code_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                    "hash_type": "data",
+                    "args": "0x"
+                }
+            }
+        },
+        "asc",
+        "0x64"
+    ]
+}' \
+| tr -d '\n' \
+| curl -H 'content-type: application/json' -d @- \
+http://localhost:8116
+```
+
 get cells by lock script and filter capacity range
 
 ```bash
