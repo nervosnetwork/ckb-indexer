@@ -1062,6 +1062,48 @@ mod tests {
             "total size should be filtered cellbase cells (100~199)"
         );
 
+        let filter_empty_type_script_cells_page_1 = rpc
+            .get_cells(
+                SearchKey {
+                    script: lock_script1.clone().into(),
+                    script_type: ScriptType::Lock,
+                    filter: Some(SearchKeyFilter {
+                        script: Some(ScriptBuilder::default().build().into()),
+                        output_data_len_range: None,
+                        output_capacity_range: None,
+                        block_range: None,
+                    }),
+                },
+                Order::Asc,
+                150.into(),
+                None,
+            )
+            .unwrap();
+
+        let filter_empty_type_script_cells_page_1 = rpc
+            .get_cells(
+                SearchKey {
+                    script: lock_script1.clone().into(),
+                    script_type: ScriptType::Lock,
+                    filter: Some(SearchKeyFilter {
+                        script: Some(ScriptBuilder::default().build().into()),
+                        output_data_len_range: None,
+                        output_capacity_range: None,
+                        block_range: None,
+                    }),
+                },
+                Order::Asc,
+                150.into(),
+                Some(filter_empty_type_script_cells_page_1.last_cursor),
+            )
+            .unwrap();
+
+        assert_eq!(
+            total_blocks as usize,
+            filter_empty_type_script_cells_page_1.objects.len() + filter_empty_type_script_cells_page_1.objects.len(),
+            "total size should be cellbase cells count (no type script)"
+        );
+
         // test get_transactions rpc
         let txs_page_1 = rpc
             .get_transactions(
