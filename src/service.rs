@@ -515,7 +515,7 @@ impl IndexerRpc for IndexerRpcImpl {
                             if snapshot
                                 .get(
                                     Key::TxLockScript(
-                                        &filter_script,
+                                        filter_script,
                                         block_number,
                                         tx_index,
                                         io_index,
@@ -536,7 +536,7 @@ impl IndexerRpc for IndexerRpcImpl {
                             if snapshot
                                 .get(
                                     Key::TxTypeScript(
-                                        &filter_script,
+                                        filter_script,
                                         block_number,
                                         tx_index,
                                         io_index,
