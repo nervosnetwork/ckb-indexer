@@ -73,11 +73,11 @@ impl<'a> Key<'a> {
     }
 }
 
-impl<'a> Into<Vec<u8>> for Key<'a> {
-    fn into(self) -> Vec<u8> {
+impl<'a> From<Key<'a>> for Vec<u8> {
+    fn from(key: Key<'a>) -> Vec<u8> {
         let mut encoded = Vec::new();
 
-        match self {
+        match key {
             Key::OutPoint(out_point) => {
                 encoded.push(KeyPrefix::OutPoint as u8);
                 encoded.extend_from_slice(out_point.as_slice());
@@ -148,10 +148,10 @@ pub fn extract_raw_data(script: &Script) -> Vec<u8> {
     .concat()
 }
 
-impl<'a> Into<Vec<u8>> for Value<'a> {
-    fn into(self) -> Vec<u8> {
+impl<'a> From<Value<'a>> for Vec<u8> {
+    fn from(value: Value<'a>) -> Vec<u8> {
         let mut encoded = Vec::new();
-        match self {
+        match value {
             Value::Cell(block_number, tx_index, output, output_data) => {
                 encoded.extend_from_slice(&block_number.to_le_bytes());
                 encoded.extend_from_slice(&tx_index.to_le_bytes());
