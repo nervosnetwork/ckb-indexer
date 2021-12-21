@@ -6,8 +6,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("DB error {0}")]
-    DBError(String),
+    #[error("Db error {0}")]
+    DbError(String),
 }
 
 pub type IteratorItem = (Box<[u8]>, Box<[u8]>);

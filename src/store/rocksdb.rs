@@ -78,7 +78,7 @@ impl Batch for RocksdbBatch {
 
 impl From<rocksdb::Error> for Error {
     fn from(e: rocksdb::Error) -> Error {
-        Error::DBError(e.to_string())
+        Error::DbError(e.to_string())
     }
 }
 

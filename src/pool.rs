@@ -3,17 +3,12 @@ use std::collections::HashSet;
 
 /// an overlay to index the pending txs in the ckb tx pool,
 /// currently only supports removals of dead cells from the pending txs
+#[derive(Default)]
 pub struct Pool {
     dead_cells: HashSet<OutPoint>,
 }
 
 impl Pool {
-    pub fn new() -> Self {
-        Self {
-            dead_cells: HashSet::new(),
-        }
-    }
-
     // the tx has been comitted in a block, it should be removed from pending dead cells
     pub fn transaction_commited(&mut self, tx: &TransactionView) {
         for input in tx.inputs() {

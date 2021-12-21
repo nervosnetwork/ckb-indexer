@@ -512,7 +512,7 @@ impl IndexerRpc for IndexerRpcImpl {
                 if let Some(filter_script) = filter_script.as_ref() {
                     match filter_script_type {
                         ScriptType::Lock => {
-                            if snapshot
+                            snapshot
                                 .get(
                                     Key::TxLockScript(
                                         filter_script,
@@ -526,14 +526,10 @@ impl IndexerRpc for IndexerRpcImpl {
                                     )
                                     .into_vec(),
                                 )
-                                .expect("get TxLockScript should be OK")
-                                .is_none()
-                            {
-                                return None;
-                            }
+                                .expect("get TxLockScript should be OK")?;
                         }
                         ScriptType::Type => {
-                            if snapshot
+                            snapshot
                                 .get(
                                     Key::TxTypeScript(
                                         filter_script,
@@ -547,11 +543,7 @@ impl IndexerRpc for IndexerRpcImpl {
                                     )
                                     .into_vec(),
                                 )
-                                .expect("get TxTypeScript should be OK")
-                                .is_none()
-                            {
-                                return None;
-                            }
+                                .expect("get TxTypeScript should be OK")?;
                         }
                     }
                 }
@@ -742,6 +734,7 @@ fn build_query_options(
 }
 
 // a helper fn to build filter options from search paramters, returns prefix, output_data_len_range, output_capacity_range and block_range
+#[allow(clippy::type_complexity)]
 fn build_filter_options(
     search_key: SearchKey,
 ) -> Result<(
@@ -817,7 +810,7 @@ mod tests {
     #[test]
     fn rpc() {
         let store = new_store("rpc");
-        let pool = Arc::new(RwLock::new(Pool::new()));
+        let pool = Arc::new(RwLock::new(Pool::default()));
         let indexer = Indexer::new(store.clone(), 10, 100, None);
         let rpc = IndexerRpcImpl {
             store,

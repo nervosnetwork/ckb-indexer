@@ -771,7 +771,7 @@ pub enum Error {
 impl From<StoreError> for Error {
     fn from(e: StoreError) -> Error {
         match e {
-            StoreError::DBError(s) => Error::StoreError(s),
+            StoreError::DbError(s) => Error::StoreError(s),
         }
     }
 }
