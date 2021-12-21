@@ -286,12 +286,12 @@ pub struct Tx {
     block_number: BlockNumber,
     tx_index: Uint32,
     io_index: Uint32,
-    io_type: IOType,
+    io_type: CellType,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum IOType {
+pub enum CellType {
     Input,
     Output,
 }
@@ -504,9 +504,9 @@ impl IndexerRpc for IndexerRpcImpl {
                         .expect("stored io_index"),
                 );
                 let io_type = if *key.last().expect("stored io_type") == 0 {
-                    IOType::Input
+                    CellType::Input
                 } else {
-                    IOType::Output
+                    CellType::Output
                 };
 
                 if let Some(filter_script) = filter_script.as_ref() {
@@ -520,8 +520,8 @@ impl IndexerRpc for IndexerRpcImpl {
                                         tx_index,
                                         io_index,
                                         match io_type {
-                                            IOType::Input => indexer::IOType::Input,
-                                            IOType::Output => indexer::IOType::Output,
+                                            CellType::Input => indexer::CellType::Input,
+                                            CellType::Output => indexer::CellType::Output,
                                         },
                                     )
                                     .into_vec(),
@@ -541,8 +541,8 @@ impl IndexerRpc for IndexerRpcImpl {
                                         tx_index,
                                         io_index,
                                         match io_type {
-                                            IOType::Input => indexer::IOType::Input,
-                                            IOType::Output => indexer::IOType::Output,
+                                            CellType::Input => indexer::CellType::Input,
+                                            CellType::Output => indexer::CellType::Output,
                                         },
                                     )
                                     .into_vec(),
