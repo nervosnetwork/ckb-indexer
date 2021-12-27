@@ -3,6 +3,8 @@ name = "ckb-indexer"
 version = "0.3.2"
 authors = ["quake <quake.wang@gmail.com>"]
 edition = "2018"
+description = "The ckb indexer"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
