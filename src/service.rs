@@ -286,12 +286,12 @@ pub struct Tx {
     block_number: BlockNumber,
     tx_index: Uint32,
     io_index: Uint32,
-    io_type: IOType,
+    io_type: CellType,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum IOType {
+pub enum CellType {
     Input,
     Output,
 }
@@ -504,54 +504,46 @@ impl IndexerRpc for IndexerRpcImpl {
                         .expect("stored io_index"),
                 );
                 let io_type = if *key.last().expect("stored io_type") == 0 {
-                    IOType::Input
+                    CellType::Input
                 } else {
-                    IOType::Output
+                    CellType::Output
                 };
 
                 if let Some(filter_script) = filter_script.as_ref() {
                     match filter_script_type {
                         ScriptType::Lock => {
-                            if snapshot
+                            snapshot
                                 .get(
                                     Key::TxLockScript(
-                                        &filter_script,
+                                        filter_script,
                                         block_number,
                                         tx_index,
                                         io_index,
                                         match io_type {
-                                            IOType::Input => indexer::IOType::Input,
-                                            IOType::Output => indexer::IOType::Output,
+                                            CellType::Input => indexer::CellType::Input,
+                                            CellType::Output => indexer::CellType::Output,
                                         },
                                     )
                                     .into_vec(),
                                 )
-                                .expect("get TxLockScript should be OK")
-                                .is_none()
-                            {
-                                return None;
-                            }
+                                .expect("get TxLockScript should be OK")?;
                         }
                         ScriptType::Type => {
-                            if snapshot
+                            snapshot
                                 .get(
                                     Key::TxTypeScript(
-                                        &filter_script,
+                                        filter_script,
                                         block_number,
                                         tx_index,
                                         io_index,
                                         match io_type {
-                                            IOType::Input => indexer::IOType::Input,
-                                            IOType::Output => indexer::IOType::Output,
+                                            CellType::Input => indexer::CellType::Input,
+                                            CellType::Output => indexer::CellType::Output,
                                         },
                                     )
                                     .into_vec(),
                                 )
-                                .expect("get TxTypeScript should be OK")
-                                .is_none()
-                            {
-                                return None;
-                            }
+                                .expect("get TxTypeScript should be OK")?;
                         }
                     }
                 }
@@ -742,6 +734,7 @@ fn build_query_options(
 }
 
 // a helper fn to build filter options from search paramters, returns prefix, output_data_len_range, output_capacity_range and block_range
+#[allow(clippy::type_complexity)]
 fn build_filter_options(
     search_key: SearchKey,
 ) -> Result<(
@@ -817,7 +810,7 @@ mod tests {
     #[test]
     fn rpc() {
         let store = new_store("rpc");
-        let pool = Arc::new(RwLock::new(Pool::new()));
+        let pool = Arc::new(RwLock::new(Pool::default()));
         let indexer = Indexer::new(store.clone(), 10, 100, None);
         let rpc = IndexerRpcImpl {
             store,

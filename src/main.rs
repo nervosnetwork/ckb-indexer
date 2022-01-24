@@ -50,7 +50,7 @@ async fn main() {
         .get_matches();
 
     let index_tx_pool = matches.is_present("index_tx_pool");
-    let pool = Arc::new(RwLock::new(Pool::new()));
+    let pool = Arc::new(RwLock::new(Pool::default()));
     let service = Service::new(
         matches.value_of("store_path").expect("required arg"),
         if index_tx_pool {
@@ -74,7 +74,7 @@ async fn main() {
         let codec = StreamCodec::stream_incoming();
         let tcp_stream = TcpStream::connect(&uri)
             .await
-            .expect(&format!("Failed to connect to {:?}", uri));
+            .unwrap_or_else(|_| panic!("Failed to connect to {:?}", uri));
         let (sink, stream) = codec.framed(tcp_stream).split();
         let sink = sink.sink_map_err(|e| error!("tcp sink error: {:?}", e));
         let stream = stream.map_err(|e| error!("tcp stream error: {:?}", e));
@@ -189,15 +189,13 @@ async fn main() {
         }
 
         service.poll(rpc_channel.into()).await;
+    } else if index_tx_pool {
+        error!("indexing the pending txs in the ckb tx-pool is only supported when connecting to ckb rpc service with tcp protocol")
     } else {
-        if index_tx_pool {
-            error!("indexing the pending txs in the ckb tx-pool is only supported when connecting to ckb rpc service with tcp protocol")
-        } else {
-            let client = http::connect(&uri)
-                .await
-                .expect(&format!("Failed to connect to {:?}", uri));
-            service.poll(client).await;
-        }
+        let client = http::connect(&uri)
+            .await
+            .unwrap_or_else(|_| panic!("Failed to connect to {:?}", uri));
+        service.poll(client).await;
     }
 
     rpc_server.close();

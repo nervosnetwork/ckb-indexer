@@ -18,8 +18,8 @@ use std::{
 
 pub type TxIndex = u32;
 pub type OutputIndex = u32;
-pub type IOIndex = u32;
-pub enum IOType {
+pub type CellIndex = u32;
+pub enum CellType {
     Input,
     Output,
 }
@@ -42,8 +42,8 @@ pub enum Key<'a> {
     ConsumedOutPoint(BlockNumber, &'a OutPoint),
     CellLockScript(&'a Script, BlockNumber, TxIndex, OutputIndex),
     CellTypeScript(&'a Script, BlockNumber, TxIndex, OutputIndex),
-    TxLockScript(&'a Script, BlockNumber, TxIndex, IOIndex, IOType),
-    TxTypeScript(&'a Script, BlockNumber, TxIndex, IOIndex, IOType),
+    TxLockScript(&'a Script, BlockNumber, TxIndex, CellIndex, CellType),
+    TxTypeScript(&'a Script, BlockNumber, TxIndex, CellIndex, CellType),
     TxHash(&'a Byte32),
     Header(BlockNumber, &'a Byte32),
 }
@@ -73,11 +73,11 @@ impl<'a> Key<'a> {
     }
 }
 
-impl<'a> Into<Vec<u8>> for Key<'a> {
-    fn into(self) -> Vec<u8> {
+impl<'a> From<Key<'a>> for Vec<u8> {
+    fn from(key: Key<'a>) -> Vec<u8> {
         let mut encoded = Vec::new();
 
-        match self {
+        match key {
             Key::OutPoint(out_point) => {
                 encoded.push(KeyPrefix::OutPoint as u8);
                 encoded.extend_from_slice(out_point.as_slice());
@@ -99,16 +99,16 @@ impl<'a> Into<Vec<u8>> for Key<'a> {
                 encoded.push(KeyPrefix::TxLockScript as u8);
                 append_key(&mut encoded, script, block_number, tx_index, io_index);
                 match io_type {
-                    IOType::Input => encoded.push(0),
-                    IOType::Output => encoded.push(1),
+                    CellType::Input => encoded.push(0),
+                    CellType::Output => encoded.push(1),
                 }
             }
             Key::TxTypeScript(script, block_number, tx_index, io_index, io_type) => {
                 encoded.push(KeyPrefix::TxTypeScript as u8);
                 append_key(&mut encoded, script, block_number, tx_index, io_index);
                 match io_type {
-                    IOType::Input => encoded.push(0),
-                    IOType::Output => encoded.push(1),
+                    CellType::Input => encoded.push(0),
+                    CellType::Output => encoded.push(1),
                 }
             }
             Key::TxHash(tx_hash) => {
@@ -148,10 +148,10 @@ pub fn extract_raw_data(script: &Script) -> Vec<u8> {
     .concat()
 }
 
-impl<'a> Into<Vec<u8>> for Value<'a> {
-    fn into(self) -> Vec<u8> {
+impl<'a> From<Value<'a>> for Vec<u8> {
+    fn from(value: Value<'a>) -> Vec<u8> {
         let mut encoded = Vec::new();
-        match self {
+        match value {
             Value::Cell(block_number, tx_index, output, output_data) => {
                 encoded.extend_from_slice(&block_number.to_le_bytes());
                 encoded.extend_from_slice(&tx_index.to_le_bytes());
@@ -321,7 +321,7 @@ where
                             block_number,
                             tx_index,
                             input_index,
-                            IOType::Input,
+                            CellType::Input,
                         ),
                         Value::TxHash(&tx_hash),
                     )?;
@@ -341,7 +341,7 @@ where
                                 block_number,
                                 tx_index,
                                 input_index,
-                                IOType::Input,
+                                CellType::Input,
                             ),
                             Value::TxHash(&tx_hash),
                         )?;
@@ -373,7 +373,7 @@ where
                         block_number,
                         tx_index,
                         output_index,
-                        IOType::Output,
+                        CellType::Output,
                     ),
                     Value::TxHash(&tx_hash),
                 )?;
@@ -388,7 +388,7 @@ where
                             block_number,
                             tx_index,
                             output_index,
-                            IOType::Output,
+                            CellType::Output,
                         ),
                         Value::TxHash(&tx_hash),
                     )?;
@@ -460,7 +460,7 @@ where
                             block_number,
                             tx_index,
                             output_index,
-                            IOType::Output,
+                            CellType::Output,
                         )
                         .into_vec(),
                     )?;
@@ -475,7 +475,7 @@ where
                                 block_number,
                                 tx_index,
                                 output_index,
-                                IOType::Output,
+                                CellType::Output,
                             )
                             .into_vec(),
                         )?;
@@ -528,7 +528,7 @@ where
                                 block_number,
                                 tx_index,
                                 input_index,
-                                IOType::Input,
+                                CellType::Input,
                             )
                             .into_vec(),
                         )?;
@@ -548,7 +548,7 @@ where
                                     block_number,
                                     tx_index,
                                     input_index,
-                                    IOType::Input,
+                                    CellType::Input,
                                 )
                                 .into_vec(),
                             )?;
@@ -718,7 +718,7 @@ where
         &self,
         out_point: &OutPoint,
     ) -> Result<Option<DetailedLiveCell>, Error> {
-        let key_vec = Key::OutPoint(&out_point).into_vec();
+        let key_vec = Key::OutPoint(out_point).into_vec();
         let (block_number, tx_index, cell_output, cell_data) = match self.store.get(&key_vec)? {
             Some(stored_cell) => Value::parse_cell_value(&stored_cell),
             None => return Ok(None),
@@ -771,7 +771,7 @@ pub enum Error {
 impl From<StoreError> for Error {
     fn from(e: StoreError) -> Error {
         match e {
-            StoreError::DBError(s) => Error::StoreError(s),
+            StoreError::DbError(s) => Error::StoreError(s),
         }
     }
 }
