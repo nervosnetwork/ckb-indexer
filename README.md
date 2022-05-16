@@ -68,6 +68,7 @@ Returns the live cells collection by the lock or type script.
             output_data_len_range: [u64; 2], filter cells by output data len range, [inclusive, exclusive]
             output_capacity_range: [u64; 2], filter cells by output capacity range, [inclusive, exclusive]
             block_range: [u64; 2], filter cells by block number range, [inclusive, exclusive]
+            with_data: bool, optional default is `true`, if with_data is set to false, the field of returning cell.output_data is null in the result,
     order: enum, asc | desc
     limit: result size limit
     after_cursor: pagination parameter, optional

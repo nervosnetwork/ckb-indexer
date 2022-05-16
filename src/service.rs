@@ -229,6 +229,7 @@ pub struct SearchKey {
     script: Script,
     script_type: ScriptType,
     filter: Option<SearchKeyFilter>,
+    with_data: Option<bool>,
 }
 
 #[derive(Deserialize, Default)]
@@ -274,7 +275,7 @@ pub struct IndexerInfo {
 #[derive(Serialize)]
 pub struct Cell {
     output: CellOutput,
-    output_data: JsonBytes,
+    output_data: Option<JsonBytes>,
     out_point: OutPoint,
     block_number: BlockNumber,
     tx_index: Uint32,
@@ -348,6 +349,7 @@ impl IndexerRpc for IndexerRpcImpl {
             filter_output_data_len_range,
             filter_output_capacity_range,
             filter_block_range,
+            with_data,
         ) = build_filter_options(search_key)?;
         let mode = IteratorMode::From(from_key.as_ref(), direction);
         let snapshot = self.store.inner().snapshot();
@@ -424,7 +426,11 @@ impl IndexerRpc for IndexerRpcImpl {
 
                 Some(Cell {
                     output: output.into(),
-                    output_data: output_data.into(),
+                    output_data: if with_data {
+                        Some(output_data.into())
+                    } else {
+                        None
+                    },
                     out_point: out_point.into(),
                     block_number: block_number.into(),
                     tx_index: tx_index.into(),
@@ -589,6 +595,7 @@ impl IndexerRpc for IndexerRpcImpl {
             filter_output_data_len_range,
             filter_output_capacity_range,
             filter_block_range,
+            _with_data,
         ) = build_filter_options(search_key)?;
         let mode = IteratorMode::From(from_key.as_ref(), direction);
         let snapshot = self.store.inner().snapshot();
@@ -733,7 +740,7 @@ fn build_query_options(
     Ok((prefix, from_key, direction, skip))
 }
 
-// a helper fn to build filter options from search paramters, returns prefix, output_data_len_range, output_capacity_range and block_range
+// a helper fn to build filter options from search paramters, returns prefix, output_data_len_range, output_capacity_range, block_range and with_data
 #[allow(clippy::type_complexity)]
 fn build_filter_options(
     search_key: SearchKey,
@@ -742,11 +749,13 @@ fn build_filter_options(
     Option<[usize; 2]>,
     Option<[core::Capacity; 2]>,
     Option<[core::BlockNumber; 2]>,
+    bool,
 )> {
     let SearchKey {
         script: _,
         script_type: _,
         filter,
+        with_data,
     } = search_key;
     let filter = filter.unwrap_or_default();
     let filter_script_prefix = if let Some(script) = filter.script {
@@ -783,6 +792,7 @@ fn build_filter_options(
         filter_output_data_len_range,
         filter_output_capacity_range,
         filter_block_range,
+        with_data.unwrap_or(true),
     ))
 }
 
@@ -898,7 +908,7 @@ mod tests {
                         .lock(lock_script1.clone())
                         .build(),
                 )
-                .output_data(Default::default())
+                .output_data(Bytes::from(i.to_string()).pack())
                 .build();
 
             pre_tx0 = TransactionBuilder::default()
@@ -952,6 +962,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Asc,
                 150.into(),
@@ -964,6 +975,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: Some(false),
                 },
                 Order::Asc,
                 150.into(),
@@ -977,12 +989,26 @@ mod tests {
             "total size should be cellbase cells count + 1 (last block live cell)"
         );
 
+        let output_data: packed::Bytes =
+            cells_page_1.objects[10].output_data.clone().unwrap().into();
+        assert_eq!(
+            output_data.raw_data().to_vec(),
+            b"10",
+            "block #10 cellbase output_data should be 10"
+        );
+
+        assert!(
+            cells_page_2.objects[10].output_data.is_none(),
+            "cellbase output_data should be none when the params with_data is false"
+        );
+
         let desc_cells_page_1 = rpc
             .get_cells(
                 SearchKey {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Desc,
                 150.into(),
@@ -996,6 +1022,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Desc,
                 150.into(),
@@ -1024,6 +1051,7 @@ mod tests {
                         output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
                     }),
+                    with_data: None,
                 },
                 Order::Asc,
                 60.into(),
@@ -1042,6 +1070,7 @@ mod tests {
                         output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
                     }),
+                    with_data: None,
                 },
                 Order::Asc,
                 60.into(),
@@ -1062,6 +1091,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Asc,
                 500.into(),
@@ -1074,6 +1104,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Asc,
                 500.into(),
@@ -1089,6 +1120,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Desc,
                 500.into(),
@@ -1101,6 +1133,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Desc,
                 500.into(),
@@ -1125,6 +1158,7 @@ mod tests {
                         output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
                     }),
+                    with_data: None,
                 },
                 Order::Asc,
                 200.into(),
@@ -1143,6 +1177,7 @@ mod tests {
                         output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
                     }),
+                    with_data: None,
                 },
                 Order::Asc,
                 200.into(),
@@ -1162,6 +1197,7 @@ mod tests {
                 script: lock_script1.clone().into(),
                 script_type: ScriptType::Lock,
                 filter: None,
+                with_data: None,
             })
             .unwrap()
             .unwrap();
@@ -1177,6 +1213,7 @@ mod tests {
                 script: lock_script2.clone().into(),
                 script_type: ScriptType::Lock,
                 filter: None,
+                with_data: None,
             })
             .unwrap()
             .unwrap();
@@ -1210,6 +1247,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Asc,
                 150.into(),
@@ -1222,6 +1260,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Asc,
                 150.into(),
@@ -1241,6 +1280,7 @@ mod tests {
                 script: lock_script1.clone().into(),
                 script_type: ScriptType::Lock,
                 filter: None,
+                with_data: None,
             })
             .unwrap()
             .unwrap();
