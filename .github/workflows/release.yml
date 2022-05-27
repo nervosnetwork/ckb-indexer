@@ -22,13 +22,13 @@ jobs:
         build: [linux, macos, windows]
         include:
           - build: linux
-            os: ubuntu-18.04
+            os: ubuntu-20.04
             rust: 1.46.0
           - build: macos
-            os: macos-latest
+            os: macos-11
             rust: 1.46.0
           - build: windows
-            os: windows-latest
+            os: windows-2019
             rust: 1.46.0
 
     steps:

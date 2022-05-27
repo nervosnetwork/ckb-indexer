@@ -260,6 +260,7 @@ pub struct SearchKey {
     script: Script,
     script_type: ScriptType,
     filter: Option<SearchKeyFilter>,
+    with_data: Option<bool>,
 }
 
 #[derive(Deserialize, Default)]
@@ -305,7 +306,7 @@ pub struct IndexerInfo {
 #[derive(Serialize)]
 pub struct Cell {
     output: CellOutput,
-    output_data: JsonBytes,
+    output_data: Option<JsonBytes>,
     out_point: OutPoint,
     block_number: BlockNumber,
     tx_index: Uint32,
@@ -374,12 +375,7 @@ impl IndexerRpc for IndexerRpcImpl {
             ScriptType::Lock => ScriptType::Type,
             ScriptType::Type => ScriptType::Lock,
         };
-        let (
-            filter_prefix,
-            filter_output_data_len_range,
-            filter_output_capacity_range,
-            filter_block_range,
-        ) = build_filter_options(search_key)?;
+        let filter_options: FilterOptions = search_key.try_into()?;
         let mode = IteratorMode::From(from_key.as_ref(), direction);
         let snapshot = self.store.inner().snapshot();
         let iter = snapshot.iterator(mode).skip(skip);
@@ -410,7 +406,7 @@ impl IndexerRpc for IndexerRpcImpl {
                         .expect("stored OutPoint"),
                 );
 
-                if let Some(prefix) = filter_prefix.as_ref() {
+                if let Some(prefix) = filter_options.script_prefix.as_ref() {
                     match filter_script_type {
                         ScriptType::Lock => {
                             if !extract_raw_data(&output.lock())
@@ -432,20 +428,20 @@ impl IndexerRpc for IndexerRpcImpl {
                     }
                 }
 
-                if let Some([r0, r1]) = filter_output_data_len_range {
+                if let Some([r0, r1]) = filter_options.output_data_len_range {
                     if output_data.len() < r0 || output_data.len() >= r1 {
                         return None;
                     }
                 }
 
-                if let Some([r0, r1]) = filter_output_capacity_range {
+                if let Some([r0, r1]) = filter_options.output_capacity_range {
                     let capacity: core::Capacity = output.capacity().unpack();
                     if capacity < r0 || capacity >= r1 {
                         return None;
                     }
                 }
 
-                if let Some([r0, r1]) = filter_block_range {
+                if let Some([r0, r1]) = filter_options.block_range {
                     if block_number < r0 || block_number >= r1 {
                         return None;
                     }
@@ -455,7 +451,11 @@ impl IndexerRpc for IndexerRpcImpl {
 
                 Some(Cell {
                     output: output.into(),
-                    output_data: output_data.into(),
+                    output_data: if filter_options.with_data {
+                        Some(output_data.into())
+                    } else {
+                        None
+                    },
                     out_point: out_point.into(),
                     block_number: block_number.into(),
                     tx_index: tx_index.into(),
@@ -615,12 +615,7 @@ impl IndexerRpc for IndexerRpcImpl {
             ScriptType::Lock => ScriptType::Type,
             ScriptType::Type => ScriptType::Lock,
         };
-        let (
-            filter_prefix,
-            filter_output_data_len_range,
-            filter_output_capacity_range,
-            filter_block_range,
-        ) = build_filter_options(search_key)?;
+        let filter_options: FilterOptions = search_key.try_into()?;
         let mode = IteratorMode::From(from_key.as_ref(), direction);
         let snapshot = self.store.inner().snapshot();
         let iter = snapshot.iterator(mode).skip(skip);
@@ -650,7 +645,7 @@ impl IndexerRpc for IndexerRpcImpl {
                         .expect("stored OutPoint"),
                 );
 
-                if let Some(prefix) = filter_prefix.as_ref() {
+                if let Some(prefix) = filter_options.script_prefix.as_ref() {
                     match filter_script_type {
                         ScriptType::Lock => {
                             if !extract_raw_data(&output.lock())
@@ -672,20 +667,20 @@ impl IndexerRpc for IndexerRpcImpl {
                     }
                 }
 
-                if let Some([r0, r1]) = filter_output_data_len_range {
+                if let Some([r0, r1]) = filter_options.output_data_len_range {
                     if output_data.len() < r0 || output_data.len() >= r1 {
                         return None;
                     }
                 }
 
-                if let Some([r0, r1]) = filter_output_capacity_range {
+                if let Some([r0, r1]) = filter_options.output_capacity_range {
                     let capacity: core::Capacity = output.capacity().unpack();
                     if capacity < r0 || capacity >= r1 {
                         return None;
                     }
                 }
 
-                if let Some([r0, r1]) = filter_block_range {
+                if let Some([r0, r1]) = filter_options.block_range {
                     if block_number < r0 || block_number >= r1 {
                         return None;
                     }
@@ -764,57 +759,62 @@ fn build_query_options(
     Ok((prefix, from_key, direction, skip))
 }
 
-// a helper fn to build filter options from search paramters, returns prefix, output_data_len_range, output_capacity_range and block_range
-#[allow(clippy::type_complexity)]
-fn build_filter_options(
-    search_key: SearchKey,
-) -> Result<(
-    Option<Vec<u8>>,
-    Option<[usize; 2]>,
-    Option<[core::Capacity; 2]>,
-    Option<[core::BlockNumber; 2]>,
-)> {
-    let SearchKey {
-        script: _,
-        script_type: _,
-        filter,
-    } = search_key;
-    let filter = filter.unwrap_or_default();
-    let filter_script_prefix = if let Some(script) = filter.script {
-        let script: packed::Script = script.into();
-        if script.args().len() > MAX_PREFIX_SEARCH_SIZE {
-            return Err(Error::invalid_params(format!(
-                "search_key.filter.script.args len should be less than {}",
-                MAX_PREFIX_SEARCH_SIZE
-            )));
-        }
-        let mut prefix = Vec::new();
-        prefix.extend_from_slice(extract_raw_data(&script).as_slice());
-        Some(prefix)
-    } else {
-        None
-    };
+struct FilterOptions {
+    script_prefix: Option<Vec<u8>>,
+    output_data_len_range: Option<[usize; 2]>,
+    output_capacity_range: Option<[core::Capacity; 2]>,
+    block_range: Option<[core::BlockNumber; 2]>,
+    with_data: bool,
+}
 
-    let filter_output_data_len_range = filter.output_data_len_range.map(|[r0, r1]| {
-        [
-            Into::<u64>::into(r0) as usize,
-            Into::<u64>::into(r1) as usize,
-        ]
-    });
-    let filter_output_capacity_range = filter.output_capacity_range.map(|[r0, r1]| {
-        [
-            core::Capacity::shannons(r0.into()),
-            core::Capacity::shannons(r1.into()),
-        ]
-    });
-    let filter_block_range = filter.block_range.map(|r| [r[0].into(), r[1].into()]);
+impl TryInto<FilterOptions> for SearchKey {
+    type Error = Error;
 
-    Ok((
-        filter_script_prefix,
-        filter_output_data_len_range,
-        filter_output_capacity_range,
-        filter_block_range,
-    ))
+    fn try_into(self) -> Result<FilterOptions> {
+        let SearchKey {
+            script: _,
+            script_type: _,
+            filter,
+            with_data,
+        } = self;
+        let filter = filter.unwrap_or_default();
+        let script_prefix = if let Some(script) = filter.script {
+            let script: packed::Script = script.into();
+            if script.args().len() > MAX_PREFIX_SEARCH_SIZE {
+                return Err(Error::invalid_params(format!(
+                    "search_key.filter.script.args len should be less than {}",
+                    MAX_PREFIX_SEARCH_SIZE
+                )));
+            }
+            let mut prefix = Vec::new();
+            prefix.extend_from_slice(extract_raw_data(&script).as_slice());
+            Some(prefix)
+        } else {
+            None
+        };
+
+        let output_data_len_range = filter.output_data_len_range.map(|[r0, r1]| {
+            [
+                Into::<u64>::into(r0) as usize,
+                Into::<u64>::into(r1) as usize,
+            ]
+        });
+        let output_capacity_range = filter.output_capacity_range.map(|[r0, r1]| {
+            [
+                core::Capacity::shannons(r0.into()),
+                core::Capacity::shannons(r1.into()),
+            ]
+        });
+        let block_range = filter.block_range.map(|r| [r[0].into(), r[1].into()]);
+
+        Ok(FilterOptions {
+            script_prefix,
+            output_data_len_range,
+            output_capacity_range,
+            block_range,
+            with_data: with_data.unwrap_or(true),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -929,7 +929,7 @@ mod tests {
                         .lock(lock_script1.clone())
                         .build(),
                 )
-                .output_data(Default::default())
+                .output_data(Bytes::from(i.to_string()).pack())
                 .build();
 
             pre_tx0 = TransactionBuilder::default()
@@ -983,6 +983,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Asc,
                 150.into(),
@@ -995,6 +996,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: Some(false),
                 },
                 Order::Asc,
                 150.into(),
@@ -1008,12 +1010,26 @@ mod tests {
             "total size should be cellbase cells count + 1 (last block live cell)"
         );
 
+        let output_data: packed::Bytes =
+            cells_page_1.objects[10].output_data.clone().unwrap().into();
+        assert_eq!(
+            output_data.raw_data().to_vec(),
+            b"10",
+            "block #10 cellbase output_data should be 10"
+        );
+
+        assert!(
+            cells_page_2.objects[10].output_data.is_none(),
+            "cellbase output_data should be none when the params with_data is false"
+        );
+
         let desc_cells_page_1 = rpc
             .get_cells(
                 SearchKey {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Desc,
                 150.into(),
@@ -1027,6 +1043,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Desc,
                 150.into(),
@@ -1055,6 +1072,7 @@ mod tests {
                         output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
                     }),
+                    with_data: None,
                 },
                 Order::Asc,
                 60.into(),
@@ -1073,6 +1091,7 @@ mod tests {
                         output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
                     }),
+                    with_data: None,
                 },
                 Order::Asc,
                 60.into(),
@@ -1093,6 +1112,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Asc,
                 500.into(),
@@ -1105,6 +1125,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Asc,
                 500.into(),
@@ -1120,6 +1141,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Desc,
                 500.into(),
@@ -1132,6 +1154,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Desc,
                 500.into(),
@@ -1156,6 +1179,7 @@ mod tests {
                         output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
                     }),
+                    with_data: None,
                 },
                 Order::Asc,
                 200.into(),
@@ -1174,6 +1198,7 @@ mod tests {
                         output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
                     }),
+                    with_data: None,
                 },
                 Order::Asc,
                 200.into(),
@@ -1193,6 +1218,7 @@ mod tests {
                 script: lock_script1.clone().into(),
                 script_type: ScriptType::Lock,
                 filter: None,
+                with_data: None,
             })
             .unwrap()
             .unwrap();
@@ -1208,6 +1234,7 @@ mod tests {
                 script: lock_script2.clone().into(),
                 script_type: ScriptType::Lock,
                 filter: None,
+                with_data: None,
             })
             .unwrap()
             .unwrap();
@@ -1241,6 +1268,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Asc,
                 150.into(),
@@ -1253,6 +1281,7 @@ mod tests {
                     script: lock_script1.clone().into(),
                     script_type: ScriptType::Lock,
                     filter: None,
+                    with_data: None,
                 },
                 Order::Asc,
                 150.into(),
@@ -1272,6 +1301,7 @@ mod tests {
                 script: lock_script1.clone().into(),
                 script_type: ScriptType::Lock,
                 filter: None,
+                with_data: None,
             })
             .unwrap()
             .unwrap();
