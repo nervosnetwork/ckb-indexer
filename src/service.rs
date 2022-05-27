@@ -3,7 +3,8 @@ use crate::pool::Pool;
 use crate::store::{IteratorDirection, RocksdbStore, Store};
 
 use ckb_jsonrpc_types::{
-    BlockNumber, Capacity, CellOutput, JsonBytes, LocalNode, OutPoint, Script, Uint32, Uint64,
+    BlockNumber, Capacity, CellOutput, HeaderView, JsonBytes, LocalNode, OutPoint, Script, Uint32,
+    Uint64,
 };
 use ckb_types::{core, packed, prelude::*, H256};
 use jsonrpc_core::{Error, IoHandler, Result};
@@ -21,7 +22,7 @@ use std::convert::TryInto;
 use std::net::ToSocketAddrs;
 use std::sync::{Arc, RwLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Have to use RocksdbStore instead of generic `Store` type here,
 /// because some rpc need rocksdb snapshot funtion which has lifetime mark and is hard to wrap in a trait
@@ -106,10 +107,13 @@ impl Service {
             thread::sleep(self.poll_interval);
         }
 
+        let mut last_updated_time = Instant::now();
+        let mut last_warning_time = Instant::now();
         loop {
             if let Some((tip_number, tip_hash)) = indexer.tip().expect("get tip should be OK") {
                 match get_block_by_number(&rpc_client, tip_number + 1).await {
                     Ok(Some(block)) => {
+                        last_updated_time = Instant::now();
                         if block.parent_hash() == tip_hash {
                             info!("append {}, {}", block.number(), block.hash());
                             indexer.append(&block).expect("append block should be OK");
@@ -142,6 +146,21 @@ impl Service {
                         }
                     }
                     Ok(None) => {
+                        if last_updated_time.elapsed() > Duration::from_secs(60)
+                            && last_warning_time.elapsed() > Duration::from_secs(60)
+                        {
+                            if let Ok(ckb_tip_header) = get_tip_header(&rpc_client).await {
+                                error!(
+                                    "it has been {}s since the last update, ckb.tip_number = {}, ckb.tip_hash = {:#x}, indexer.tip_number = {}, indexer.tip_hash = {:#x}",
+                                    last_updated_time.elapsed().as_secs(),
+                                    ckb_tip_header.number(),
+                                    ckb_tip_header.hash(),
+                                    tip_number,
+                                    tip_hash,
+                                );
+                                last_warning_time = Instant::now();
+                            }
+                        }
                         trace!("no new block");
                         thread::sleep(self.poll_interval);
                     }
@@ -181,6 +200,15 @@ pub async fn get_block_by_number(
         })
 }
 
+pub async fn get_tip_header(
+    rpc_client: &gen_client::Client,
+) -> std::result::Result<core::HeaderView, RpcError> {
+    rpc_client
+        .get_tip_header()
+        .await
+        .map(|json_header: HeaderView| json_header.into())
+}
+
 #[rpc(client)]
 pub trait CkbRpc {
     #[rpc(name = "get_block_by_number")]
@@ -192,6 +220,9 @@ pub trait CkbRpc {
 
     #[rpc(name = "local_node_info")]
     fn local_node_info(&self) -> Result<LocalNode>;
+
+    #[rpc(name = "get_tip_header")]
+    fn get_tip_header(&self) -> Result<HeaderView>;
 }
 
 #[rpc(server)]
