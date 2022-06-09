@@ -65,6 +65,7 @@ Returns the live cells collection by the lock or type script.
         scrip_type - enum, lock | type
         filter - filter cells by following conditions, all conditions are optional
             script: if search script type is lock, filter cells by type script prefix, and vice versa
+            script_len_range: [u64; 2], filter cells by script len range, [inclusive, exclusive]
             output_data_len_range: [u64; 2], filter cells by output data len range, [inclusive, exclusive]
             output_capacity_range: [u64; 2], filter cells by output capacity range, [inclusive, exclusive]
             block_range: [u64; 2], filter cells by block number range, [inclusive, exclusive]
@@ -127,6 +128,34 @@ echo '{
                     "hash_type": "data",
                     "args": "0x94bbc8327e16d195de87815c391e7b9131e80419c51a405a0b21227c6ee05129"
                 }
+            }
+        },
+        "asc",
+        "0x64"
+    ]
+}' \
+| tr -d '\n' \
+| curl -H 'content-type: application/json' -d @- \
+http://localhost:8116
+```
+
+get cells by lock script and filter empty type script by setting script_len_range to [0, 1), script_len is caculated by (code_hash + hash_type + args).len
+
+```bash
+echo '{
+    "id": 2,
+    "jsonrpc": "2.0",
+    "method": "get_cells",
+    "params": [
+        {
+            "script": {
+                "code_hash": "0x86a1c6987a4acbe1a887cca4c9dd2ac9fcb07405bbeda51b861b18bbf7492c4b",
+                "hash_type": "type",
+                "args": "0xb728659574c85e88d957bd643bb747a00f018d72"
+            },
+            "script_type": "lock",
+            "filter": {
+                "script_len_range": ["0x0", "0x1"]
             }
         },
         "asc",

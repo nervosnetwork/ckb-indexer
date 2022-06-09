@@ -266,6 +266,7 @@ pub struct SearchKey {
 #[derive(Deserialize, Default)]
 pub struct SearchKeyFilter {
     script: Option<Script>,
+    script_len_range: Option<[Uint64; 2]>,
     output_data_len_range: Option<[Uint64; 2]>,
     output_capacity_range: Option<[Uint64; 2]>,
     block_range: Option<[BlockNumber; 2]>,
@@ -428,6 +429,27 @@ impl IndexerRpc for IndexerRpcImpl {
                     }
                 }
 
+                if let Some([r0, r1]) = filter_options.script_len_range {
+                    match filter_script_type {
+                        ScriptType::Lock => {
+                            let script_len = extract_raw_data(&output.lock()).len();
+                            if script_len < r0 || script_len > r1 {
+                                return None;
+                            }
+                        }
+                        ScriptType::Type => {
+                            let script_len = output
+                                .type_()
+                                .to_opt()
+                                .map(|script| extract_raw_data(&script).len())
+                                .unwrap_or_default();
+                            if script_len < r0 || script_len > r1 {
+                                return None;
+                            }
+                        }
+                    }
+                }
+
                 if let Some([r0, r1]) = filter_options.output_data_len_range {
                     if output_data.len() < r0 || output_data.len() >= r1 {
                         return None;
@@ -486,6 +508,11 @@ impl IndexerRpc for IndexerRpcImpl {
         )?;
 
         let (filter_script, filter_block_range) = if let Some(filter) = search_key.filter.as_ref() {
+            if filter.script_len_range.is_some() {
+                return Err(Error::invalid_params(
+                    "doesn't support search_key.filter.script_len_range parameter",
+                ));
+            }
             if filter.output_data_len_range.is_some() {
                 return Err(Error::invalid_params(
                     "doesn't support search_key.filter.output_data_len_range parameter",
@@ -667,6 +694,27 @@ impl IndexerRpc for IndexerRpcImpl {
                     }
                 }
 
+                if let Some([r0, r1]) = filter_options.script_len_range {
+                    match filter_script_type {
+                        ScriptType::Lock => {
+                            let script_len = extract_raw_data(&output.lock()).len();
+                            if script_len < r0 || script_len > r1 {
+                                return None;
+                            }
+                        }
+                        ScriptType::Type => {
+                            let script_len = output
+                                .type_()
+                                .to_opt()
+                                .map(|script| extract_raw_data(&script).len())
+                                .unwrap_or_default();
+                            if script_len < r0 || script_len > r1 {
+                                return None;
+                            }
+                        }
+                    }
+                }
+
                 if let Some([r0, r1]) = filter_options.output_data_len_range {
                     if output_data.len() < r0 || output_data.len() >= r1 {
                         return None;
@@ -761,6 +809,7 @@ fn build_query_options(
 
 struct FilterOptions {
     script_prefix: Option<Vec<u8>>,
+    script_len_range: Option<[usize; 2]>,
     output_data_len_range: Option<[usize; 2]>,
     output_capacity_range: Option<[core::Capacity; 2]>,
     block_range: Option<[core::BlockNumber; 2]>,
@@ -793,6 +842,13 @@ impl TryInto<FilterOptions> for SearchKey {
             None
         };
 
+        let script_len_range = filter.script_len_range.map(|[r0, r1]| {
+            [
+                Into::<u64>::into(r0) as usize,
+                Into::<u64>::into(r1) as usize,
+            ]
+        });
+
         let output_data_len_range = filter.output_data_len_range.map(|[r0, r1]| {
             [
                 Into::<u64>::into(r0) as usize,
@@ -809,6 +865,7 @@ impl TryInto<FilterOptions> for SearchKey {
 
         Ok(FilterOptions {
             script_prefix,
+            script_len_range,
             output_data_len_range,
             output_capacity_range,
             block_range,
@@ -1068,6 +1125,7 @@ mod tests {
                     script_type: ScriptType::Lock,
                     filter: Some(SearchKeyFilter {
                         script: None,
+                        script_len_range: None,
                         output_data_len_range: None,
                         output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
@@ -1087,6 +1145,7 @@ mod tests {
                     script_type: ScriptType::Lock,
                     filter: Some(SearchKeyFilter {
                         script: None,
+                        script_len_range: None,
                         output_data_len_range: None,
                         output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
@@ -1103,6 +1162,53 @@ mod tests {
             100,
             filter_cells_page_1.objects.len() + filter_cells_page_2.objects.len(),
             "total size should be filtered cellbase cells (100~199)"
+        );
+
+        let filter_empty_type_script_cells_page_1 = rpc
+            .get_cells(
+                SearchKey {
+                    script: lock_script1.clone().into(),
+                    script_type: ScriptType::Lock,
+                    filter: Some(SearchKeyFilter {
+                        script: None,
+                        script_len_range: Some([0.into(), 1.into()]),
+                        output_data_len_range: None,
+                        output_capacity_range: None,
+                        block_range: None,
+                    }),
+                    with_data: None,
+                },
+                Order::Asc,
+                150.into(),
+                None,
+            )
+            .unwrap();
+
+        let filter_empty_type_script_cells_page_2 = rpc
+            .get_cells(
+                SearchKey {
+                    script: lock_script1.clone().into(),
+                    script_type: ScriptType::Lock,
+                    filter: Some(SearchKeyFilter {
+                        script: None,
+                        script_len_range: Some([0.into(), 1.into()]),
+                        output_data_len_range: None,
+                        output_capacity_range: None,
+                        block_range: None,
+                    }),
+                    with_data: None,
+                },
+                Order::Asc,
+                150.into(),
+                Some(filter_empty_type_script_cells_page_1.last_cursor),
+            )
+            .unwrap();
+
+        assert_eq!(
+            total_blocks as usize,
+            filter_empty_type_script_cells_page_1.objects.len()
+                + filter_empty_type_script_cells_page_2.objects.len(),
+            "total size should be cellbase cells count (empty type script)"
         );
 
         // test get_transactions rpc
@@ -1175,6 +1281,7 @@ mod tests {
                     script_type: ScriptType::Lock,
                     filter: Some(SearchKeyFilter {
                         script: None,
+                        script_len_range: None,
                         output_data_len_range: None,
                         output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
@@ -1194,6 +1301,7 @@ mod tests {
                     script_type: ScriptType::Lock,
                     filter: Some(SearchKeyFilter {
                         script: None,
+                        script_len_range: None,
                         output_data_len_range: None,
                         output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
