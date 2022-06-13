@@ -32,14 +32,7 @@ jobs:
             rust: 1.46.0
 
     steps:
-    - uses: actions/checkout@v1
-
-    - name: Install windows dependencies (scoop)
-      run: |
-        iwr -useb get.scoop.sh | iex
-        scoop install llvm
-        echo "LIBCLANG_PATH=$($HOME)/scoop/apps/llvm/current/bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      if: matrix.os == 'windows-latest'
+    - uses: actions/checkout@v2
 
     - name: Build
       run: cargo build --verbose --release
@@ -49,25 +42,26 @@ jobs:
 
     - name: Create archive for Linux
       run: 7z a -ttar -so -an ./target/release/${{ env.RELEASE_BIN }} ${{ env.RELEASE_ADDS }} | 7z a -si ./artifacts/${{ env.RELEASE_BIN }}-linux-x86_64.tar.gz
-      if: matrix.os == 'ubuntu-18.04'
+      if: matrix.os == 'ubuntu-20.04'
 
     - name: Create archive for Windows
       run: 7z a -tzip ./artifacts/${{ env.RELEASE_BIN }}-windows-x86_64.zip ./target/release/${{ env.RELEASE_BIN }}.exe ${{ env.RELEASE_ADDS }}
-      if: matrix.os == 'windows-latest'
+      if: matrix.os == 'windows-2019'
 
     - name: Install p7zip
       # 7Zip not available on MacOS, install p7zip via homebrew.
       run: brew install p7zip
-      if: matrix.os == 'macos-latest'
+      if: matrix.os == 'macos-11'
 
     - name: Create archive for MacOS
       run: 7z a -tzip ./artifacts/${{ env.RELEASE_BIN }}-mac-x86_64.zip ./target/release/${{ env.RELEASE_BIN }} ${{ env.RELEASE_ADDS }}
-      if: matrix.os == 'macos-latest'
+      if: matrix.os == 'macos-11'
 
-    # This will double-zip
-    # See - https://github.com/actions/upload-artifact/issues/39
-    - uses: actions/upload-artifact@v1
-      name: Upload archive
+    - uses: softprops/action-gh-release@v0.1.14
+      name: Create release draft
+      if: startsWith(github.ref, 'refs/tags/')
       with:
-        name: ${{ runner.os }}
-        path: artifacts/
+        files: ./artifacts/ckb-indexer-*
+        draft: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

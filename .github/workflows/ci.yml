@@ -26,15 +26,11 @@ jobs:
             rust: 1.46.0
 
     steps:
-    - uses: actions/checkout@v1
-    - name: Install windows dependencies (scoop)
-      run: |
-        iwr -useb get.scoop.sh | iex
-        scoop install llvm
-        echo "LIBCLANG_PATH=$($HOME)/scoop/apps/llvm/current/bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      if: matrix.os == 'windows-latest'
+    - uses: actions/checkout@v2
+
     - name: Build
       run: cargo build --verbose
+
     - name: Run tests
       run: cargo test --verbose
 
