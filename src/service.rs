@@ -263,6 +263,17 @@ pub struct SearchKey {
     with_data: Option<bool>,
 }
 
+impl Default for SearchKey {
+    fn default() -> Self {
+        Self {
+            script: Script::default(),
+            script_type: ScriptType::Lock,
+            filter: None,
+            with_data: None,
+        }
+    }
+}
+
 #[derive(Deserialize, Default)]
 pub struct SearchKeyFilter {
     script: Option<Script>,
@@ -1038,9 +1049,7 @@ mod tests {
             .get_cells(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
-                    filter: None,
-                    with_data: None,
+                    ..Default::default()
                 },
                 Order::Asc,
                 150.into(),
@@ -1051,9 +1060,8 @@ mod tests {
             .get_cells(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
-                    filter: None,
                     with_data: Some(false),
+                    ..Default::default()
                 },
                 Order::Asc,
                 150.into(),
@@ -1084,9 +1092,7 @@ mod tests {
             .get_cells(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
-                    filter: None,
-                    with_data: None,
+                    ..Default::default()
                 },
                 Order::Desc,
                 150.into(),
@@ -1098,9 +1104,7 @@ mod tests {
             .get_cells(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
-                    filter: None,
-                    with_data: None,
+                    ..Default::default()
                 },
                 Order::Desc,
                 150.into(),
@@ -1122,15 +1126,11 @@ mod tests {
             .get_cells(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
                     filter: Some(SearchKeyFilter {
-                        script: None,
-                        script_len_range: None,
-                        output_data_len_range: None,
-                        output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
+                        ..Default::default()
                     }),
-                    with_data: None,
+                    ..Default::default()
                 },
                 Order::Asc,
                 60.into(),
@@ -1142,15 +1142,11 @@ mod tests {
             .get_cells(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
                     filter: Some(SearchKeyFilter {
-                        script: None,
-                        script_len_range: None,
-                        output_data_len_range: None,
-                        output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
+                        ..Default::default()
                     }),
-                    with_data: None,
+                    ..Default::default()
                 },
                 Order::Asc,
                 60.into(),
@@ -1168,15 +1164,11 @@ mod tests {
             .get_cells(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
                     filter: Some(SearchKeyFilter {
-                        script: None,
                         script_len_range: Some([0.into(), 1.into()]),
-                        output_data_len_range: None,
-                        output_capacity_range: None,
-                        block_range: None,
+                        ..Default::default()
                     }),
-                    with_data: None,
+                    ..Default::default()
                 },
                 Order::Asc,
                 150.into(),
@@ -1188,15 +1180,11 @@ mod tests {
             .get_cells(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
                     filter: Some(SearchKeyFilter {
-                        script: None,
                         script_len_range: Some([0.into(), 1.into()]),
-                        output_data_len_range: None,
-                        output_capacity_range: None,
-                        block_range: None,
+                        ..Default::default()
                     }),
-                    with_data: None,
+                    ..Default::default()
                 },
                 Order::Asc,
                 150.into(),
@@ -1216,9 +1204,7 @@ mod tests {
             .get_transactions(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
-                    filter: None,
-                    with_data: None,
+                    ..Default::default()
                 },
                 Order::Asc,
                 500.into(),
@@ -1229,9 +1215,7 @@ mod tests {
             .get_transactions(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
-                    filter: None,
-                    with_data: None,
+                    ..Default::default()
                 },
                 Order::Asc,
                 500.into(),
@@ -1245,9 +1229,7 @@ mod tests {
             .get_transactions(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
-                    filter: None,
-                    with_data: None,
+                    ..Default::default()
                 },
                 Order::Desc,
                 500.into(),
@@ -1258,9 +1240,7 @@ mod tests {
             .get_transactions(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
-                    filter: None,
-                    with_data: None,
+                    ..Default::default()
                 },
                 Order::Desc,
                 500.into(),
@@ -1278,15 +1258,11 @@ mod tests {
             .get_transactions(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
                     filter: Some(SearchKeyFilter {
-                        script: None,
-                        script_len_range: None,
-                        output_data_len_range: None,
-                        output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
+                        ..Default::default()
                     }),
-                    with_data: None,
+                    ..Default::default()
                 },
                 Order::Asc,
                 200.into(),
@@ -1298,15 +1274,11 @@ mod tests {
             .get_transactions(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
                     filter: Some(SearchKeyFilter {
-                        script: None,
-                        script_len_range: None,
-                        output_data_len_range: None,
-                        output_capacity_range: None,
                         block_range: Some([100.into(), 200.into()]),
+                        ..Default::default()
                     }),
-                    with_data: None,
+                    ..Default::default()
                 },
                 Order::Asc,
                 200.into(),
@@ -1324,9 +1296,7 @@ mod tests {
         let capacity = rpc
             .get_cells_capacity(SearchKey {
                 script: lock_script1.clone().into(),
-                script_type: ScriptType::Lock,
-                filter: None,
-                with_data: None,
+                ..Default::default()
             })
             .unwrap()
             .unwrap();
@@ -1340,9 +1310,7 @@ mod tests {
         let capacity = rpc
             .get_cells_capacity(SearchKey {
                 script: lock_script2.clone().into(),
-                script_type: ScriptType::Lock,
-                filter: None,
-                with_data: None,
+                ..Default::default()
             })
             .unwrap()
             .unwrap();
@@ -1374,9 +1342,7 @@ mod tests {
             .get_cells(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
-                    filter: None,
-                    with_data: None,
+                    ..Default::default()
                 },
                 Order::Asc,
                 150.into(),
@@ -1387,9 +1353,7 @@ mod tests {
             .get_cells(
                 SearchKey {
                     script: lock_script1.clone().into(),
-                    script_type: ScriptType::Lock,
-                    filter: None,
-                    with_data: None,
+                    ..Default::default()
                 },
                 Order::Asc,
                 150.into(),
@@ -1407,9 +1371,7 @@ mod tests {
         let capacity = rpc
             .get_cells_capacity(SearchKey {
                 script: lock_script1.clone().into(),
-                script_type: ScriptType::Lock,
-                filter: None,
-                with_data: None,
+                ..Default::default()
             })
             .unwrap()
             .unwrap();
