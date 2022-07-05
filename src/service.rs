@@ -261,6 +261,7 @@ pub struct SearchKey {
     script_type: ScriptType,
     filter: Option<SearchKeyFilter>,
     with_data: Option<bool>,
+    group_by_transaction: Option<bool>,
 }
 
 impl Default for SearchKey {
@@ -270,6 +271,7 @@ impl Default for SearchKey {
             script_type: ScriptType::Lock,
             filter: None,
             with_data: None,
+            group_by_transaction: None,
         }
     }
 }
@@ -325,7 +327,23 @@ pub struct Cell {
 }
 
 #[derive(Serialize)]
-pub struct Tx {
+#[serde(untagged)]
+pub enum Tx {
+    Ungrouped(TxWithCell),
+    Grouped(TxWithCells),
+}
+
+impl Tx {
+    pub fn tx_hash(&self) -> H256 {
+        match self {
+            Tx::Ungrouped(tx) => tx.tx_hash.clone(),
+            Tx::Grouped(tx) => tx.tx_hash.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct TxWithCell {
     tx_hash: H256,
     block_number: BlockNumber,
     tx_index: Uint32,
@@ -334,6 +352,14 @@ pub struct Tx {
 }
 
 #[derive(Serialize)]
+pub struct TxWithCells {
+    tx_hash: H256,
+    block_number: BlockNumber,
+    tx_index: Uint32,
+    cells: Vec<(CellType, Uint32)>,
+}
+
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum CellType {
     Input,
@@ -517,6 +543,7 @@ impl IndexerRpc for IndexerRpcImpl {
             order,
             after_cursor,
         )?;
+        let limit = limit.value() as usize;
 
         let (filter_script, filter_block_range) = if let Some(filter) = search_key.filter.as_ref() {
             if filter.script_len_range.is_some() {
@@ -552,11 +579,19 @@ impl IndexerRpc for IndexerRpcImpl {
         let snapshot = self.store.inner().snapshot();
         let iter = snapshot.iterator(mode).skip(skip);
 
-        let mut last_key = Vec::new();
-        let txs = iter
-            .take_while(|(key, _value)| key.starts_with(&prefix))
-            .filter_map(|(key, value)| {
-                let tx_hash = packed::Byte32::from_slice(&value).expect("stored tx hash");
+        if search_key.group_by_transaction.unwrap_or_default() {
+            let mut tx_with_cells: Vec<TxWithCells> = Vec::new();
+            let mut last_key = Vec::new();
+            for (key, value) in iter.take_while(|(key, _value)| key.starts_with(&prefix)) {
+                let tx_hash: H256 = packed::Byte32::from_slice(&value)
+                    .expect("stored tx hash")
+                    .unpack();
+                if tx_with_cells.len() == limit
+                    && tx_with_cells.last_mut().unwrap().tx_hash != tx_hash
+                {
+                    break;
+                }
+                last_key = key.to_vec();
                 let block_number = u64::from_be_bytes(
                     key[key.len() - 17..key.len() - 9]
                         .try_into()
@@ -579,66 +614,166 @@ impl IndexerRpc for IndexerRpcImpl {
                 };
 
                 if let Some(filter_script) = filter_script.as_ref() {
-                    match filter_script_type {
-                        ScriptType::Lock => {
-                            snapshot
-                                .get(
-                                    Key::TxLockScript(
-                                        filter_script,
-                                        block_number,
-                                        tx_index,
-                                        io_index,
-                                        match io_type {
-                                            CellType::Input => indexer::CellType::Input,
-                                            CellType::Output => indexer::CellType::Output,
-                                        },
-                                    )
-                                    .into_vec(),
+                    let filter_script_matched = match filter_script_type {
+                        ScriptType::Lock => snapshot
+                            .get(
+                                Key::TxLockScript(
+                                    filter_script,
+                                    block_number,
+                                    tx_index,
+                                    io_index,
+                                    match io_type {
+                                        CellType::Input => indexer::CellType::Input,
+                                        CellType::Output => indexer::CellType::Output,
+                                    },
                                 )
-                                .expect("get TxLockScript should be OK")?;
-                        }
-                        ScriptType::Type => {
-                            snapshot
-                                .get(
-                                    Key::TxTypeScript(
-                                        filter_script,
-                                        block_number,
-                                        tx_index,
-                                        io_index,
-                                        match io_type {
-                                            CellType::Input => indexer::CellType::Input,
-                                            CellType::Output => indexer::CellType::Output,
-                                        },
-                                    )
-                                    .into_vec(),
+                                .into_vec(),
+                            )
+                            .expect("get TxLockScript should be OK")
+                            .is_some(),
+                        ScriptType::Type => snapshot
+                            .get(
+                                Key::TxTypeScript(
+                                    filter_script,
+                                    block_number,
+                                    tx_index,
+                                    io_index,
+                                    match io_type {
+                                        CellType::Input => indexer::CellType::Input,
+                                        CellType::Output => indexer::CellType::Output,
+                                    },
                                 )
-                                .expect("get TxTypeScript should be OK")?;
-                        }
+                                .into_vec(),
+                            )
+                            .expect("get TxTypeScript should be OK")
+                            .is_some(),
+                    };
+                    if !filter_script_matched {
+                        continue;
                     }
                 }
 
                 if let Some([r0, r1]) = filter_block_range {
                     if block_number < r0 || block_number >= r1 {
-                        return None;
+                        continue;
                     }
                 }
 
-                last_key = key.to_vec();
-                Some(Tx {
-                    tx_hash: tx_hash.unpack(),
-                    block_number: block_number.into(),
-                    tx_index: tx_index.into(),
-                    io_index: io_index.into(),
-                    io_type,
-                })
-            })
-            .take(limit.value() as usize)
-            .collect::<Vec<_>>();
+                let last_tx_hash_is_same = tx_with_cells
+                    .last_mut()
+                    .map(|last| {
+                        if last.tx_hash == tx_hash {
+                            last.cells.push((io_type.clone(), io_index.into()));
+                            true
+                        } else {
+                            false
+                        }
+                    })
+                    .unwrap_or_default();
 
-        Ok(Pagination {
-            objects: txs,
-            last_cursor: JsonBytes::from_vec(last_key),
-        })
+                if !last_tx_hash_is_same {
+                    tx_with_cells.push(TxWithCells {
+                        tx_hash,
+                        block_number: block_number.into(),
+                        tx_index: tx_index.into(),
+                        cells: vec![(io_type, io_index.into())],
+                    });
+                }
+            }
+
+            Ok(Pagination {
+                objects: tx_with_cells.into_iter().map(Tx::Grouped).collect(),
+                last_cursor: JsonBytes::from_vec(last_key),
+            })
+        } else {
+            let mut last_key = Vec::new();
+            let txs = iter
+                .take_while(|(key, _value)| key.starts_with(&prefix))
+                .filter_map(|(key, value)| {
+                    let tx_hash = packed::Byte32::from_slice(&value).expect("stored tx hash");
+                    let block_number = u64::from_be_bytes(
+                        key[key.len() - 17..key.len() - 9]
+                            .try_into()
+                            .expect("stored block_number"),
+                    );
+                    let tx_index = u32::from_be_bytes(
+                        key[key.len() - 9..key.len() - 5]
+                            .try_into()
+                            .expect("stored tx_index"),
+                    );
+                    let io_index = u32::from_be_bytes(
+                        key[key.len() - 5..key.len() - 1]
+                            .try_into()
+                            .expect("stored io_index"),
+                    );
+                    let io_type = if *key.last().expect("stored io_type") == 0 {
+                        CellType::Input
+                    } else {
+                        CellType::Output
+                    };
+
+                    if let Some(filter_script) = filter_script.as_ref() {
+                        match filter_script_type {
+                            ScriptType::Lock => {
+                                snapshot
+                                    .get(
+                                        Key::TxLockScript(
+                                            filter_script,
+                                            block_number,
+                                            tx_index,
+                                            io_index,
+                                            match io_type {
+                                                CellType::Input => indexer::CellType::Input,
+                                                CellType::Output => indexer::CellType::Output,
+                                            },
+                                        )
+                                        .into_vec(),
+                                    )
+                                    .expect("get TxLockScript should be OK")?;
+                            }
+                            ScriptType::Type => {
+                                snapshot
+                                    .get(
+                                        Key::TxTypeScript(
+                                            filter_script,
+                                            block_number,
+                                            tx_index,
+                                            io_index,
+                                            match io_type {
+                                                CellType::Input => indexer::CellType::Input,
+                                                CellType::Output => indexer::CellType::Output,
+                                            },
+                                        )
+                                        .into_vec(),
+                                    )
+                                    .expect("get TxTypeScript should be OK")?;
+                            }
+                        }
+                    }
+
+                    if let Some([r0, r1]) = filter_block_range {
+                        if block_number < r0 || block_number >= r1 {
+                            return None;
+                        }
+                    }
+
+                    last_key = key.to_vec();
+                    Some(Tx::Ungrouped(TxWithCell {
+                        tx_hash: tx_hash.unpack(),
+                        block_number: block_number.into(),
+                        tx_index: tx_index.into(),
+                        io_index: io_index.into(),
+                        io_type,
+                    }))
+                })
+                .take(limit)
+                .collect::<Vec<_>>();
+
+            Ok(Pagination {
+                objects: txs,
+                last_cursor: JsonBytes::from_vec(last_key),
+            })
+        }
     }
 
     fn get_cells_capacity(&self, search_key: SearchKey) -> Result<Option<CellsCapacity>> {
@@ -836,6 +971,7 @@ impl TryInto<FilterOptions> for SearchKey {
             script_type: _,
             filter,
             with_data,
+            group_by_transaction: _,
         } = self;
         let filter = filter.unwrap_or_default();
         let script_prefix = if let Some(script) = filter.script {
@@ -1250,8 +1386,8 @@ mod tests {
 
         assert_eq!(total_blocks as usize * 3 - 1, desc_txs_page_1.objects.len() + desc_txs_page_2.objects.len(), "total size should be cellbase tx count + total_block * 2 - 1 (genesis block only has one tx)");
         assert_eq!(
-            desc_txs_page_1.objects.first().unwrap().tx_hash,
-            txs_page_2.objects.last().unwrap().tx_hash
+            desc_txs_page_1.objects.first().unwrap().tx_hash(),
+            txs_page_2.objects.last().unwrap().tx_hash()
         );
 
         let filter_txs_page_1 = rpc
@@ -1290,6 +1426,113 @@ mod tests {
             300,
             filter_txs_page_1.objects.len() + filter_txs_page_2.objects.len(),
             "total size should be filtered blocks count * 3 (100~199 * 3)"
+        );
+
+        // test get_transactions rpc group by tx hash
+        let txs_page_1 = rpc
+            .get_transactions(
+                SearchKey {
+                    script: lock_script1.clone().into(),
+                    group_by_transaction: Some(true),
+                    ..Default::default()
+                },
+                Order::Asc,
+                500.into(),
+                None,
+            )
+            .unwrap();
+        let txs_page_2 = rpc
+            .get_transactions(
+                SearchKey {
+                    script: lock_script1.clone().into(),
+                    group_by_transaction: Some(true),
+                    ..Default::default()
+                },
+                Order::Asc,
+                500.into(),
+                Some(txs_page_1.last_cursor),
+            )
+            .unwrap();
+
+        assert_eq!(
+            total_blocks as usize * 2,
+            txs_page_1.objects.len() + txs_page_2.objects.len(),
+            "total size should be cellbase tx count + total_block"
+        );
+
+        let desc_txs_page_1 = rpc
+            .get_transactions(
+                SearchKey {
+                    script: lock_script1.clone().into(),
+                    group_by_transaction: Some(true),
+                    ..Default::default()
+                },
+                Order::Desc,
+                500.into(),
+                None,
+            )
+            .unwrap();
+        let desc_txs_page_2 = rpc
+            .get_transactions(
+                SearchKey {
+                    script: lock_script1.clone().into(),
+                    group_by_transaction: Some(true),
+                    ..Default::default()
+                },
+                Order::Desc,
+                500.into(),
+                Some(desc_txs_page_1.last_cursor),
+            )
+            .unwrap();
+
+        assert_eq!(
+            total_blocks as usize * 2,
+            desc_txs_page_1.objects.len() + desc_txs_page_2.objects.len(),
+            "total size should be cellbase tx count + total_block"
+        );
+        assert_eq!(
+            desc_txs_page_1.objects.first().unwrap().tx_hash(),
+            txs_page_2.objects.last().unwrap().tx_hash()
+        );
+
+        let filter_txs_page_1 = rpc
+            .get_transactions(
+                SearchKey {
+                    script: lock_script1.clone().into(),
+                    group_by_transaction: Some(true),
+                    filter: Some(SearchKeyFilter {
+                        block_range: Some([100.into(), 200.into()]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                Order::Asc,
+                150.into(),
+                None,
+            )
+            .unwrap();
+
+        let filter_txs_page_2 = rpc
+            .get_transactions(
+                SearchKey {
+                    script: lock_script1.clone().into(),
+                    group_by_transaction: Some(true),
+                    filter: Some(SearchKeyFilter {
+                        block_range: Some([100.into(), 200.into()]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                Order::Asc,
+                150.into(),
+                Some(filter_txs_page_1.last_cursor),
+            )
+            .unwrap();
+
+        assert_eq!(
+            200,
+            filter_txs_page_1.objects.len() + filter_txs_page_2.objects.len(),
+            "total size should be filtered blocks count * 2 (100~199 * 2)"
         );
 
         // test get_cells_capacity rpc
