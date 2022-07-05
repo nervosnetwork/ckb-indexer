@@ -61,7 +61,7 @@ Returns the live cells collection by the lock or type script.
 #### Parameters
 
     search_key:
-        script - Script
+        script - Script, supports prefix search
         scrip_type - enum, lock | type
         filter - filter cells by following conditions, all conditions are optional
             script: if search script type is lock, filter cells by type script prefix, and vice versa
@@ -69,7 +69,7 @@ Returns the live cells collection by the lock or type script.
             output_data_len_range: [u64; 2], filter cells by output data len range, [inclusive, exclusive]
             output_capacity_range: [u64; 2], filter cells by output capacity range, [inclusive, exclusive]
             block_range: [u64; 2], filter cells by block number range, [inclusive, exclusive]
-            with_data: bool, optional default is `true`, if with_data is set to false, the field of returning cell.output_data is null in the result,
+        with_data - bool, optional default is `true`, if with_data is set to false, the field of returning cell.output_data is null in the result
     order: enum, asc | desc
     limit: result size limit
     after_cursor: pagination parameter, optional
@@ -77,8 +77,14 @@ Returns the live cells collection by the lock or type script.
 
 #### Returns
 
-    objects - live cells
-    last_cursor - pagination parameter
+    objects:
+        cells - live cells collection
+            output: the fields of an output cell
+            output_data: the cell data
+            out_point: reference to a cell via transaction hash and output index
+            block_number: the number of the transaction committed in the block
+            tx_index: the position index of the transaction committed in the block
+    last_cursor: pagination parameter
 
 #### Examples
 
@@ -202,11 +208,12 @@ Returns the transactions collection by the lock or type script.
 #### Parameters
 
     search_key:
-        script - Script
+        script - Script, supports prefix search when group_by_transaction is false
         scrip_type - enum, lock | type
         filter - filter cells by following conditions, all conditions are optional
             script: if search script type is lock, filter cells by type script, and vice versa
             block_range: [u64; 2], filter cells by block number range, [inclusive, exclusive]
+        group_by_transaction - bool, optional default is `false`, if group_by_transaction is set to true, the returning objects will be grouped by the  x hash
     order: enum, asc | desc
     limit: result size limit
     after_cursor: pagination parameter, optional
@@ -214,10 +221,25 @@ Returns the transactions collection by the lock or type script.
 
 #### Returns
 
-    objects - transactions
+    objects - enum, ungrouped TxWithCell | grouped TxWithCells
+        TxWithCell:
+            tx_hash: transaction hash,
+            block_number: the number of the transaction committed in the block
+            tx_index: the position index of the transaction committed in the block
+            io_type: enum, input | output
+            io_index: the position index of the cell in the transaction inputs or outputs
+
+        TxWithCells:
+            tx_hash: transaction hash,
+            block_number: the number of the transaction committed in the block
+            tx_index: the position index of the transaction committed in the block
+            cells: Array [[io_type, io_index]]
+
     last_cursor - pagination parameter
 
 #### Examples
+
+get transactions by lock script
 
 ```bash
 echo '{
@@ -232,6 +254,32 @@ echo '{
                 "args": "0x8211f1b938a107cd53b6302cc752a6fc3965638d"
             },
             "script_type": "lock"
+        },
+        "asc",
+        "0x64"
+    ]
+}' \
+| tr -d '\n' \
+| curl -H 'content-type: application/json' -d @- \
+http://localhost:8116
+```
+
+get transactions by lock script and group by tx hash
+
+```bash
+echo '{
+    "id": 2,
+    "jsonrpc": "2.0",
+    "method": "get_transactions",
+    "params": [
+        {
+            "script": {
+                "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
+                "hash_type": "type",
+                "args": "0x8211f1b938a107cd53b6302cc752a6fc3965638d"
+            },
+            "script_type": "lock",
+            "group_by_transaction": true
         },
         "asc",
         "0x64"
