@@ -213,7 +213,7 @@ Returns the transactions collection by the lock or type script.
         filter - filter cells by following conditions, all conditions are optional
             script: if search script type is lock, filter cells by type script, and vice versa
             block_range: [u64; 2], filter cells by block number range, [inclusive, exclusive]
-        group_by_transaction - bool, optional default is `false`, if group_by_transaction is set to true, the returning objects will be grouped by the  x hash
+        group_by_transaction - bool, optional default is `false`, if group_by_transaction is set to true, the returning objects will be grouped by the tx hash
     order: enum, asc | desc
     limit: result size limit
     after_cursor: pagination parameter, optional
