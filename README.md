@@ -43,16 +43,35 @@ Returns the indexed tip block
 
 #### Examples
 
+get indexed tip block hash and number
+
 ```bash
 echo '{
     "id": 2,
     "jsonrpc": "2.0",
     "method": "get_tip"
 }' \
-| tr -d '\n' \
 | curl -H 'content-type: application/json' -d @- \
 http://localhost:8116
 ```
+
+<details>
+    <summary>click to expand result</summary>
+<p>
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "block_hash": "0x4959d6e764a2edc6038dbf03d61ebcc99371115627b186fdcccb2161fbd26edc",
+    "block_number": "0x5b513e"
+  },
+  "id": 2
+}
+```
+
+</p>
+</details>
 
 ### `get_cells`
 
@@ -100,7 +119,7 @@ echo '{
             "script": {
                 "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
                 "hash_type": "type",
-                "args": "0x8211f1b938a107cd53b6302cc752a6fc3965638d"
+                "args": "0x5989ae415bb667931a99896e5fbbfad9ba53a223"
             },
             "script_type": "lock"
         },
@@ -108,10 +127,118 @@ echo '{
         "0x64"
     ]
 }' \
-| tr -d '\n' \
 | curl -H 'content-type: application/json' -d @- \
 http://localhost:8116
 ```
+
+<details>
+    <summary>click to expand result</summary>
+<p>
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "last_cursor": "0x409bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8015989ae415bb667931a99896e5fbbfad9ba53a22300000000005b0f8c0000000100000000",
+    "objects": [
+      {
+        "block_number": "0x5b0e6d",
+        "out_point": {
+          "index": "0x0",
+          "tx_hash": "0xe8f2180dfba0cb15b45f771d520834515a5f8d7aa07f88894da88c22629b79e9"
+        },
+        "output": {
+          "capacity": "0x189640200",
+          "lock": {
+            "args": "0x5989ae415bb667931a99896e5fbbfad9ba53a223",
+            "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
+            "hash_type": "type"
+          },
+          "type": null
+        },
+        "output_data": "0x",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0e90",
+        "out_point": {
+          "index": "0x0",
+          "tx_hash": "0xece3a27409bde2914fb7a1555d6bfca453ee46af73e665149ef549fd46ec1fc6"
+        },
+        "output": {
+          "capacity": "0x189640200",
+          "lock": {
+            "args": "0x5989ae415bb667931a99896e5fbbfad9ba53a223",
+            "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
+            "hash_type": "type"
+          },
+          "type": null
+        },
+        "output_data": "0x",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0ead",
+        "out_point": {
+          "index": "0x1",
+          "tx_hash": "0x5c48768f91e3795b418c53211c76fd038c464a24c4aa7e35bbbb6ac5b219f581"
+        },
+        "output": {
+          "capacity": "0xe36dceec20",
+          "lock": {
+            "args": "0x5989ae415bb667931a99896e5fbbfad9ba53a223",
+            "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
+            "hash_type": "type"
+          },
+          "type": null
+        },
+        "output_data": "0x",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0eeb",
+        "out_point": {
+          "index": "0x0",
+          "tx_hash": "0x90e6981d6a5692d92e54344dc0e12d213447710fa069cc19ddea874619b9ba48"
+        },
+        "output": {
+          "capacity": "0x174876e800",
+          "lock": {
+            "args": "0x5989ae415bb667931a99896e5fbbfad9ba53a223",
+            "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
+            "hash_type": "type"
+          },
+          "type": null
+        },
+        "output_data": "0x",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0f8c",
+        "out_point": {
+          "index": "0x0",
+          "tx_hash": "0x9ea14510219ae97afa0275215fa77c3c015905281c953a3917a7fd036767429c"
+        },
+        "output": {
+          "capacity": "0x189640200",
+          "lock": {
+            "args": "0x5989ae415bb667931a99896e5fbbfad9ba53a223",
+            "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
+            "hash_type": "type"
+          },
+          "type": null
+        },
+        "output_data": "0x",
+        "tx_index": "0x1"
+      }
+    ]
+  },
+  "id": 2
+}
+```
+
+</p>
+</details>
 
 get cells by lock script and filter by type script
 
@@ -123,16 +250,16 @@ echo '{
     "params": [
         {
             "script": {
-                "code_hash": "0x86a1c6987a4acbe1a887cca4c9dd2ac9fcb07405bbeda51b861b18bbf7492c4b",
+                "code_hash": "0x58c5f491aba6d61678b7cf7edf4910b1f5e00ec0cde2f42e0abb4fd9aff25a63",
                 "hash_type": "type",
-                "args": "0xb728659574c85e88d957bd643bb747a00f018d72"
+                "args": "0x2a49720e721553d0614dff29454ee4e1f07d0707"
             },
             "script_type": "lock",
             "filter": {
                 "script": {
-                    "code_hash": "0x48dbf59b4c7ee1547238021b4869bceedf4eea6b43772e5d66ef8865b6ae7212",
-                    "hash_type": "data",
-                    "args": "0x94bbc8327e16d195de87815c391e7b9131e80419c51a405a0b21227c6ee05129"
+                    "code_hash": "0xc5e5dcf215925f7ef4dfaf5f4b4f105bc321c02776d6e7d52a1db3fcd9d011a4",
+                    "hash_type": "type",
+                    "args": "0x8462b20277bcbaa30d821790b852fb322d55c2b12e750ea91ad7059bc98dda4b"
                 }
             }
         },
@@ -140,10 +267,50 @@ echo '{
         "0x64"
     ]
 }' \
-| tr -d '\n' \
 | curl -H 'content-type: application/json' -d @- \
 http://localhost:8116
 ```
+
+<details>
+    <summary>click to expand result</summary>
+<p>
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "last_cursor": "0x4058c5f491aba6d61678b7cf7edf4910b1f5e00ec0cde2f42e0abb4fd9aff25a63012a49720e721553d0614dff29454ee4e1f07d070700000000002adf870000000100000001",
+    "objects": [
+      {
+        "block_number": "0x2adf87",
+        "out_point": {
+          "index": "0x1",
+          "tx_hash": "0x04ecbc2df39e3682326a3b23c1bd2465e07eae2379ac0cc713834a1f79753779"
+        },
+        "output": {
+          "capacity": "0x436d81500",
+          "lock": {
+            "args": "0x2a49720e721553d0614dff29454ee4e1f07d0707",
+            "code_hash": "0x58c5f491aba6d61678b7cf7edf4910b1f5e00ec0cde2f42e0abb4fd9aff25a63",
+            "hash_type": "type"
+          },
+          "type": {
+            "args": "0x8462b20277bcbaa30d821790b852fb322d55c2b12e750ea91ad7059bc98dda4b",
+            "code_hash": "0xc5e5dcf215925f7ef4dfaf5f4b4f105bc321c02776d6e7d52a1db3fcd9d011a4",
+            "hash_type": "type"
+          }
+        },
+        "output_data": "0x0040d20853d746000000000000000000",
+        "tx_index": "0x1"
+      }
+    ]
+  },
+  "id": 2
+}
+```
+
+</p>
+</details>
 
 get cells by lock script and filter empty type script by setting script_len_range to [0, 1), script_len is caculated by (code_hash + hash_type + args).len
 
@@ -155,9 +322,9 @@ echo '{
     "params": [
         {
             "script": {
-                "code_hash": "0x86a1c6987a4acbe1a887cca4c9dd2ac9fcb07405bbeda51b861b18bbf7492c4b",
+                "code_hash": "0x58c5f491aba6d61678b7cf7edf4910b1f5e00ec0cde2f42e0abb4fd9aff25a63",
                 "hash_type": "type",
-                "args": "0xb728659574c85e88d957bd643bb747a00f018d72"
+                "args": "0x2a49720e721553d0614dff29454ee4e1f07d0707"
             },
             "script_type": "lock",
             "filter": {
@@ -168,10 +335,46 @@ echo '{
         "0x64"
     ]
 }' \
-| tr -d '\n' \
 | curl -H 'content-type: application/json' -d @- \
 http://localhost:8116
 ```
+
+<details>
+    <summary>click to expand result</summary>
+<p>
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "last_cursor": "0x4058c5f491aba6d61678b7cf7edf4910b1f5e00ec0cde2f42e0abb4fd9aff25a63012a49720e721553d0614dff29454ee4e1f07d070700000000002adf830000000200000001",
+    "objects": [
+      {
+        "block_number": "0x2adf83",
+        "out_point": {
+          "index": "0x1",
+          "tx_hash": "0x23ec897027c1d2a2b39e2446162bac182f18581be048cb3896ad695559b6839e"
+        },
+        "output": {
+          "capacity": "0x54b42b70b4",
+          "lock": {
+            "args": "0x2a49720e721553d0614dff29454ee4e1f07d0707",
+            "code_hash": "0x58c5f491aba6d61678b7cf7edf4910b1f5e00ec0cde2f42e0abb4fd9aff25a63",
+            "hash_type": "type"
+          },
+          "type": null
+        },
+        "output_data": "0x",
+        "tx_index": "0x2"
+      }
+    ]
+  },
+  "id": 2
+}
+```
+
+</p>
+</details>
 
 get cells by lock script and filter capacity range
 
@@ -183,23 +386,59 @@ echo '{
     "params": [
         {
             "script": {
-                "code_hash": "0x86a1c6987a4acbe1a887cca4c9dd2ac9fcb07405bbeda51b861b18bbf7492c4b",
+                "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
                 "hash_type": "type",
-                "args": "0xb728659574c85e88d957bd643bb747a00f018d72"
+                "args": "0x5989ae415bb667931a99896e5fbbfad9ba53a223"
             },
             "script_type": "lock",
             "filter": {
-                "output_capacity_range": ["0x0", "0x6cf8719ffd"]
+                "output_capacity_range": ["0x0", "0x174876e801"]
             }
         },
         "asc",
         "0x64"
     ]
 }' \
-| tr -d '\n' \
 | curl -H 'content-type: application/json' -d @- \
 http://localhost:8116
 ```
+
+<details>
+    <summary>click to expand result</summary>
+<p>
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "last_cursor": "0x409bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8015989ae415bb667931a99896e5fbbfad9ba53a22300000000005b59df0000000100000001",
+    "objects": [
+      {
+        "block_number": "0x5b59df",
+        "out_point": {
+          "index": "0x1",
+          "tx_hash": "0x21c4632a41140b828e9347ff80480b3e07be4e0a0b8d577565e7421fd5473194"
+        },
+        "output": {
+          "capacity": "0xe815b81c0",
+          "lock": {
+            "args": "0x5989ae415bb667931a99896e5fbbfad9ba53a223",
+            "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
+            "hash_type": "type"
+          },
+          "type": null
+        },
+        "output_data": "0x",
+        "tx_index": "0x1"
+      }
+    ]
+  },
+  "id": 2
+}
+```
+
+</p>
+</details>
 
 ### `get_transactions`
 
@@ -251,7 +490,7 @@ echo '{
             "script": {
                 "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
                 "hash_type": "type",
-                "args": "0x8211f1b938a107cd53b6302cc752a6fc3965638d"
+                "args": "0x5989ae415bb667931a99896e5fbbfad9ba53a223"
             },
             "script_type": "lock"
         },
@@ -259,10 +498,168 @@ echo '{
         "0x64"
     ]
 }' \
-| tr -d '\n' \
 | curl -H 'content-type: application/json' -d @- \
 http://localhost:8116
 ```
+
+<details>
+    <summary>click to expand result</summary>
+<p>
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "last_cursor": "0x809bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8015989ae415bb667931a99896e5fbbfad9ba53a22300000000005b59df000000010000000101",
+    "objects": [
+      {
+        "block_number": "0x5b033a",
+        "io_index": "0x0",
+        "io_type": "output",
+        "tx_hash": "0x556060b62d16386da53f8a4b458314dfa2d1988a7bcc5c96c3bb2a350a3453a1",
+        "tx_index": "0x4"
+      },
+      {
+        "block_number": "0x5b0671",
+        "io_index": "0x0",
+        "io_type": "input",
+        "tx_hash": "0x8205b2b4cd6380d7e332c7a5b49bf776a0322ba19f46dc6ca1f8c59f7daee08d",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0671",
+        "io_index": "0x1",
+        "io_type": "output",
+        "tx_hash": "0x8205b2b4cd6380d7e332c7a5b49bf776a0322ba19f46dc6ca1f8c59f7daee08d",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0e6d",
+        "io_index": "0x0",
+        "io_type": "output",
+        "tx_hash": "0xe8f2180dfba0cb15b45f771d520834515a5f8d7aa07f88894da88c22629b79e9",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0e90",
+        "io_index": "0x0",
+        "io_type": "output",
+        "tx_hash": "0xece3a27409bde2914fb7a1555d6bfca453ee46af73e665149ef549fd46ec1fc6",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0ead",
+        "io_index": "0x0",
+        "io_type": "input",
+        "tx_hash": "0x5c48768f91e3795b418c53211c76fd038c464a24c4aa7e35bbbb6ac5b219f581",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0ead",
+        "io_index": "0x1",
+        "io_type": "output",
+        "tx_hash": "0x5c48768f91e3795b418c53211c76fd038c464a24c4aa7e35bbbb6ac5b219f581",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0eeb",
+        "io_index": "0x0",
+        "io_type": "output",
+        "tx_hash": "0x90e6981d6a5692d92e54344dc0e12d213447710fa069cc19ddea874619b9ba48",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0f8c",
+        "io_index": "0x0",
+        "io_type": "output",
+        "tx_hash": "0x9ea14510219ae97afa0275215fa77c3c015905281c953a3917a7fd036767429c",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b5638",
+        "io_index": "0x0",
+        "io_type": "input",
+        "tx_hash": "0x9346da4caa846cc035c182ecad0c17326a587983d25fb1e12a388f1a9c5c56b4",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b5638",
+        "io_index": "0x1",
+        "io_type": "input",
+        "tx_hash": "0x9346da4caa846cc035c182ecad0c17326a587983d25fb1e12a388f1a9c5c56b4",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b5638",
+        "io_index": "0x1",
+        "io_type": "output",
+        "tx_hash": "0x9346da4caa846cc035c182ecad0c17326a587983d25fb1e12a388f1a9c5c56b4",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b5638",
+        "io_index": "0x2",
+        "io_type": "input",
+        "tx_hash": "0x9346da4caa846cc035c182ecad0c17326a587983d25fb1e12a388f1a9c5c56b4",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b59c2",
+        "io_index": "0x0",
+        "io_type": "input",
+        "tx_hash": "0x5b58f90fb3309333bf0bec878f3a05038c7fe816747300ecdac37a9da76c4128",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b59c2",
+        "io_index": "0x1",
+        "io_type": "output",
+        "tx_hash": "0x5b58f90fb3309333bf0bec878f3a05038c7fe816747300ecdac37a9da76c4128",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b59cc",
+        "io_index": "0x0",
+        "io_type": "input",
+        "tx_hash": "0x57ca2822c28e02b199424a731b2efd2c9bf752f07b7309f555f2e71abe83ba26",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b59cc",
+        "io_index": "0x1",
+        "io_type": "input",
+        "tx_hash": "0x57ca2822c28e02b199424a731b2efd2c9bf752f07b7309f555f2e71abe83ba26",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b59cc",
+        "io_index": "0x1",
+        "io_type": "output",
+        "tx_hash": "0x57ca2822c28e02b199424a731b2efd2c9bf752f07b7309f555f2e71abe83ba26",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b59df",
+        "io_index": "0x0",
+        "io_type": "input",
+        "tx_hash": "0x21c4632a41140b828e9347ff80480b3e07be4e0a0b8d577565e7421fd5473194",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b59df",
+        "io_index": "0x1",
+        "io_type": "output",
+        "tx_hash": "0x21c4632a41140b828e9347ff80480b3e07be4e0a0b8d577565e7421fd5473194",
+        "tx_index": "0x1"
+      }
+    ]
+  },
+  "id": 2
+}
+```
+
+</p>
+</details>
 
 get transactions by lock script and group by tx hash
 
@@ -276,7 +673,7 @@ echo '{
             "script": {
                 "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
                 "hash_type": "type",
-                "args": "0x8211f1b938a107cd53b6302cc752a6fc3965638d"
+                "args": "0x5989ae415bb667931a99896e5fbbfad9ba53a223"
             },
             "script_type": "lock",
             "group_by_transaction": true
@@ -285,10 +682,185 @@ echo '{
         "0x64"
     ]
 }' \
-| tr -d '\n' \
 | curl -H 'content-type: application/json' -d @- \
 http://localhost:8116
 ```
+
+<details>
+    <summary>click to expand result</summary>
+<p>
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "last_cursor": "0x809bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8015989ae415bb667931a99896e5fbbfad9ba53a22300000000005b59df000000010000000101",
+    "objects": [
+      {
+        "block_number": "0x5b033a",
+        "cells": [
+          [
+            "output",
+            "0x0"
+          ]
+        ],
+        "tx_hash": "0x556060b62d16386da53f8a4b458314dfa2d1988a7bcc5c96c3bb2a350a3453a1",
+        "tx_index": "0x4"
+      },
+      {
+        "block_number": "0x5b0671",
+        "cells": [
+          [
+            "input",
+            "0x0"
+          ],
+          [
+            "output",
+            "0x1"
+          ]
+        ],
+        "tx_hash": "0x8205b2b4cd6380d7e332c7a5b49bf776a0322ba19f46dc6ca1f8c59f7daee08d",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0e6d",
+        "cells": [
+          [
+            "output",
+            "0x0"
+          ]
+        ],
+        "tx_hash": "0xe8f2180dfba0cb15b45f771d520834515a5f8d7aa07f88894da88c22629b79e9",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0e90",
+        "cells": [
+          [
+            "output",
+            "0x0"
+          ]
+        ],
+        "tx_hash": "0xece3a27409bde2914fb7a1555d6bfca453ee46af73e665149ef549fd46ec1fc6",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0ead",
+        "cells": [
+          [
+            "input",
+            "0x0"
+          ],
+          [
+            "output",
+            "0x1"
+          ]
+        ],
+        "tx_hash": "0x5c48768f91e3795b418c53211c76fd038c464a24c4aa7e35bbbb6ac5b219f581",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0eeb",
+        "cells": [
+          [
+            "output",
+            "0x0"
+          ]
+        ],
+        "tx_hash": "0x90e6981d6a5692d92e54344dc0e12d213447710fa069cc19ddea874619b9ba48",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b0f8c",
+        "cells": [
+          [
+            "output",
+            "0x0"
+          ]
+        ],
+        "tx_hash": "0x9ea14510219ae97afa0275215fa77c3c015905281c953a3917a7fd036767429c",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b5638",
+        "cells": [
+          [
+            "input",
+            "0x0"
+          ],
+          [
+            "input",
+            "0x1"
+          ],
+          [
+            "output",
+            "0x1"
+          ],
+          [
+            "input",
+            "0x2"
+          ]
+        ],
+        "tx_hash": "0x9346da4caa846cc035c182ecad0c17326a587983d25fb1e12a388f1a9c5c56b4",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b59c2",
+        "cells": [
+          [
+            "input",
+            "0x0"
+          ],
+          [
+            "output",
+            "0x1"
+          ]
+        ],
+        "tx_hash": "0x5b58f90fb3309333bf0bec878f3a05038c7fe816747300ecdac37a9da76c4128",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b59cc",
+        "cells": [
+          [
+            "input",
+            "0x0"
+          ],
+          [
+            "input",
+            "0x1"
+          ],
+          [
+            "output",
+            "0x1"
+          ]
+        ],
+        "tx_hash": "0x57ca2822c28e02b199424a731b2efd2c9bf752f07b7309f555f2e71abe83ba26",
+        "tx_index": "0x1"
+      },
+      {
+        "block_number": "0x5b59df",
+        "cells": [
+          [
+            "input",
+            "0x0"
+          ],
+          [
+            "output",
+            "0x1"
+          ]
+        ],
+        "tx_hash": "0x21c4632a41140b828e9347ff80480b3e07be4e0a0b8d577565e7421fd5473194",
+        "tx_index": "0x1"
+      }
+    ]
+  },
+  "id": 2
+}
+```
+
+</p>
+</details>
 
 ### `get_cells_capacity`
 
@@ -323,16 +895,34 @@ echo '{
             "script": {
                 "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
                 "hash_type": "type",
-                "args": "0x8211f1b938a107cd53b6302cc752a6fc3965638d"
+                "args": "0x5989ae415bb667931a99896e5fbbfad9ba53a223"
             },
             "script_type": "lock"
         }
     ]
 }' \
-| tr -d '\n' \
 | curl -H 'content-type: application/json' -d @- \
 http://localhost:8116
 ```
+
+<details>
+    <summary>click to expand result</summary>
+<p>
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "block_hash": "0xbc52444952dc5eb01a7826aaf6bb1b660db01797414e259e7a6e6d636de8fc7c",
+    "block_number": "0x5b727a",
+    "capacity": "0xf0e8e4b4a0"
+  },
+  "id": 2
+}
+```
+
+</p>
+</details>
 
 ### `get_indexer_info`
 
@@ -351,7 +941,23 @@ echo '{
     "method": "get_indexer_info",
     "params": []
 }' \
-| tr -d '\n' \
 | curl -H 'content-type: application/json' -d @- \
 http://localhost:8116
 ```
+
+<details>
+    <summary>click to expand result</summary>
+<p>
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "version": "0.4.0"
+  },
+  "id": 2
+}
+```
+
+</p>
+</details>
