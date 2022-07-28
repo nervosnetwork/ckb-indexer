@@ -1,4 +1,4 @@
-use crate::indexer::{self, extract_raw_data, Indexer, Key, KeyPrefix, Value};
+use crate::indexer::{self, extract_raw_data, CustomFilters, Indexer, Key, KeyPrefix, Value};
 use crate::pool::Pool;
 use crate::store::{IteratorDirection, RocksdbStore, Store};
 
@@ -78,11 +78,22 @@ impl Service {
             .expect("Start Jsonrpc HTTP service")
     }
 
-    pub async fn poll(&self, rpc_client: gen_client::Client) {
+    pub async fn poll(
+        &self,
+        rpc_client: gen_client::Client,
+        block_filter_str: Option<&str>,
+        cell_filter_str: Option<&str>,
+    ) {
         let incompatible_version = Version::from("0.99.99").expect("checked version str");
         // assume that long fork will not happen >= 100 blocks.
         let keep_num = 100;
-        let indexer = Indexer::new(self.store.clone(), keep_num, 1000, self.pool.clone());
+        let indexer = Indexer::new(
+            self.store.clone(),
+            keep_num,
+            1000,
+            self.pool.clone(),
+            CustomFilters::new(block_filter_str, cell_filter_str),
+        );
 
         loop {
             match rpc_client.local_node_info().await {
@@ -385,7 +396,7 @@ impl IndexerRpc for IndexerRpcImpl {
             .iter(&[KeyPrefix::Header as u8 + 1], IteratorDirection::Reverse)
             .expect("iter Header should be OK");
         Ok(iter.next().map(|(key, _)| Tip {
-            block_hash: packed::Byte32::from_slice(&key[9..])
+            block_hash: packed::Byte32::from_slice(&key[9..41])
                 .expect("stored block key")
                 .unpack(),
             block_number: core::BlockNumber::from_be_bytes(
@@ -888,7 +899,7 @@ impl IndexerRpc for IndexerRpcImpl {
         let mut tip_iter = snapshot.iterator(tip_mode);
         Ok(tip_iter.next().map(|(key, _value)| CellsCapacity {
             capacity: capacity.into(),
-            block_hash: packed::Byte32::from_slice(&key[9..])
+            block_hash: packed::Byte32::from_slice(&key[9..41])
                 .expect("stored block key")
                 .unpack(),
             block_number: core::BlockNumber::from_be_bytes(
@@ -1046,7 +1057,7 @@ mod tests {
     fn rpc() {
         let store = new_store("rpc");
         let pool = Arc::new(RwLock::new(Pool::default()));
-        let indexer = Indexer::new(store.clone(), 10, 100, None);
+        let indexer = Indexer::new(store.clone(), 10, 100, None, CustomFilters::new(None, None));
         let rpc = IndexerRpcImpl {
             store,
             pool: Some(pool.clone()),

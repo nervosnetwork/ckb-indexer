@@ -13,6 +13,7 @@ use jsonrpc_server_utils::{
     tokio_util::codec::Decoder,
 };
 use log::{debug, error};
+use std::process::exit;
 use std::sync::{Arc, RwLock};
 
 #[tokio::main]
@@ -47,9 +48,30 @@ async fn main() {
                 .help("Whether to index the pending txs in the ckb tx-pool")
                 .required(false)
         )
+        .arg(
+            Arg::with_name("block_filter")
+                .long("block-filter")
+                .help("A custom block filter rule to filter out blocks that are not interesting to the indexer")
+                .required(false)
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("cell_filter")
+                .long("cell-filter")
+                .help("A custom cell filter rule to filter out cells that are not interesting to the indexer")
+                .required(false)
+                .takes_value(true),
+        )
         .get_matches();
 
     let index_tx_pool = matches.is_present("index_tx_pool");
+    let block_filter = matches.value_of("block_filter");
+    let cell_filter = matches.value_of("cell_filter");
+    if index_tx_pool && (block_filter.is_some() || cell_filter.is_some()) {
+        error!("cannot use customized block or cell filter rule when `index-tx-pool` is enabled");
+        exit(1);
+    }
+
     let pool = Arc::new(RwLock::new(Pool::default()));
     let service = Service::new(
         matches.value_of("store_path").expect("required arg"),
@@ -188,14 +210,14 @@ async fn main() {
             }
         }
 
-        service.poll(rpc_channel.into()).await;
+        service.poll(rpc_channel.into(), None, None).await;
     } else if index_tx_pool {
         error!("indexing the pending txs in the ckb tx-pool is only supported when connecting to ckb rpc service with tcp protocol")
     } else {
         let client = http::connect(&uri)
             .await
             .unwrap_or_else(|_| panic!("Failed to connect to {:?}", uri));
-        service.poll(client).await;
+        service.poll(client, block_filter, cell_filter).await;
     }
 
     rpc_server.close();
