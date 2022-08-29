@@ -25,6 +25,18 @@ Indexing the pending txs in the ckb tx-pool
 RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test -c tcp://127.0.0.1:18114 --index-tx-pool
 ```
 
+Indexer will index all txs and store all data in local folder by default, if you want to customize the index rules, you may use the `--block-filter` and `--cell-filter` option. The rule is written in [rhai](https://rhai.rs/book/) syntax and indexer expose the following variables to the rule: block, output and output_data.
+
+Only index the txs which block height is greater than 1000000
+```bash
+RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test --block-filter 'block.header.number.to_uint() > "1000000".to_uint()'
+```
+
+Only index the txs which output script is a specific type
+```bash
+RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test --cell-filter 'let script = output.lock; script.code_hash == "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8" && script.hash_type == "type" && script.args == "0xa897829e60ee4e3fb0e4abe65549ec4a5ddafad7"'
+```
+
 Run `ckb-indexer --help` for more information
 
 ## RPC
