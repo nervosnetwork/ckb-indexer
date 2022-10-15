@@ -965,7 +965,7 @@ http://localhost:8116
 {
   "jsonrpc": "2.0",
   "result": {
-    "version": "0.4.1"
+    "version": "0.4.2"
   },
   "id": 2
 }
