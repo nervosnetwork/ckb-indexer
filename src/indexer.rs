@@ -498,7 +498,6 @@ where
             for (tx_index, (tx_hash, outputs_len, stored_tx_index)) in
                 txs.into_iter().enumerate().rev()
             {
-                println!("rollback stored_tx_index {:?}", stored_tx_index);
                 let tx_index = stored_tx_index.unwrap_or(tx_index as u32);
                 // rollback live cells
                 for output_index in 0..outputs_len {
