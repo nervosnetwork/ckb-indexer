@@ -133,17 +133,18 @@ impl Service {
                             let longest_fork_number = tip_number.saturating_sub(keep_num);
                             match get_block_by_number(&rpc_client, longest_fork_number).await {
                                 Ok(Some(block)) => {
-                                    let stored_block_hash = indexer
+                                    if let Some(stored_block_hash) = indexer
                                         .get_block_hash(longest_fork_number)
                                         .expect("get block hash should be OK")
-                                        .expect("stored block header");
-                                    if block.hash() != stored_block_hash {
-                                        error!("long fork detected, ckb-indexer stored block {} => {:#x}, ckb node returns block {} => {:#x}, please check if ckb-indexer is connected to the same network ckb node.", longest_fork_number, stored_block_hash, longest_fork_number, block.hash());
-                                        thread::sleep(self.poll_interval);
-                                    } else {
-                                        info!("rollback {}, {}", tip_number, tip_hash);
-                                        indexer.rollback().expect("rollback block should be OK");
+                                    {
+                                        if block.hash() != stored_block_hash {
+                                            error!("long fork detected, ckb-indexer stored block {} => {:#x}, ckb node returns block {} => {:#x}, please check if ckb-indexer is connected to the same network ckb node.", longest_fork_number, stored_block_hash, longest_fork_number, block.hash());
+                                            thread::sleep(self.poll_interval);
+                                            continue;
+                                        }
                                     }
+                                    info!("rollback {}, {}", tip_number, tip_hash);
+                                    indexer.rollback().expect("rollback block should be OK");
                                 }
                                 Ok(None) => {
                                     error!("long fork detected, ckb-indexer stored block {}, ckb node returns none, please check if ckb-indexer is connected to the same network ckb node.", longest_fork_number);
