@@ -420,6 +420,11 @@ impl IndexerRpc for IndexerRpcImpl {
             order,
             after_cursor,
         )?;
+        let limit = limit.value() as usize;
+        if limit == 0 {
+            return Err(Error::invalid_params("limit should be greater than 0"));
+        }
+
         let filter_script_type = match search_key.script_type {
             ScriptType::Lock => ScriptType::Type,
             ScriptType::Type => ScriptType::Lock,
@@ -531,7 +536,7 @@ impl IndexerRpc for IndexerRpcImpl {
                     tx_index: tx_index.into(),
                 })
             })
-            .take(limit.value() as usize)
+            .take(limit)
             .collect::<Vec<_>>();
 
         Ok(Pagination {
@@ -555,6 +560,9 @@ impl IndexerRpc for IndexerRpcImpl {
             after_cursor,
         )?;
         let limit = limit.value() as usize;
+        if limit == 0 {
+            return Err(Error::invalid_params("limit should be greater than 0"));
+        }
 
         let (filter_script, filter_block_range) = if let Some(filter) = search_key.filter.as_ref() {
             if filter.script_len_range.is_some() {
