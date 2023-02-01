@@ -1,6 +1,6 @@
 ## Introduce
 
-All the [indexing](https://github.com/nervosnetwork/ckb/tree/develop/rpc#indexer) RPCs built in the CKB has been deprecated since v0.36.0 and removed in v0.40.0. This is a standalone service for creating cell and transaction indexes as an alternate solution.
+ckb-indexer is a standalone service to index the live cells and transactions in the ckb blockchain. It provides a RPC service to query the indexed data. This service has been merged into the ckb node since v0.106.0, we recommend you to use the ckb node instead of this standalone service if you are running ckb v0.106.0 or later, which is more efficient and easier to setup, it can be enabled by `--indexer` command line option when starting the ckb node or by setting `Indexer` module in the ckb.toml config file's `rpc` section.
 
 ## Usage
 
