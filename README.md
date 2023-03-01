@@ -11,19 +11,16 @@ cargo build --release
 ```
 
 Connect to default ckb rpc service at `http://127.0.0.1:8114` and stores the indexer data at `/tmp/ckb-indexer-test` folder
-
 ```bash
 RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test
 ```
 
 Or connect to ckb rpc service at `tcp://127.0.0.1:18114`
-
 ```bash
 RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test -c tcp://127.0.0.1:18114
 ```
 
 Indexing the pending txs in the ckb tx-pool
-
 ```bash
 RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test -c tcp://127.0.0.1:18114 --index-tx-pool
 ```
@@ -31,13 +28,11 @@ RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test -c tcp://127
 Indexer will index all txs and store all data in local folder by default, if you want to customize the index rules, you may use the `--block-filter` and `--cell-filter` option. The rule is written in [rhai](https://rhai.rs/book/) syntax and indexer expose the following variables to the rule: block, output and output_data.
 
 Only index the txs which block height is greater than 1000000
-
 ```bash
 RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test --block-filter 'block.header.number.to_uint() > "1000000".to_uint()'
 ```
 
 Only index the txs which output script is a specific type
-
 ```bash
 RUST_LOG=info ./target/release/ckb-indexer -s /tmp/ckb-indexer-test --cell-filter 'let script = output.lock; script.code_hash == "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8" && script.hash_type == "type" && script.args == "0xa897829e60ee4e3fb0e4abe65549ec4a5ddafad7"'
 ```
@@ -51,7 +46,6 @@ Run `ckb-indexer --help` for more information
 Returns the indexed tip block
 
 #### Parameters
-
     null
 
 #### Returns
@@ -716,59 +710,108 @@ http://localhost:8116
     "objects": [
       {
         "block_number": "0x5b033a",
-        "cells": [["output", "0x0"]],
+        "cells": [
+          [
+            "output",
+            "0x0"
+          ]
+        ],
         "tx_hash": "0x556060b62d16386da53f8a4b458314dfa2d1988a7bcc5c96c3bb2a350a3453a1",
         "tx_index": "0x4"
       },
       {
         "block_number": "0x5b0671",
         "cells": [
-          ["input", "0x0"],
-          ["output", "0x1"]
+          [
+            "input",
+            "0x0"
+          ],
+          [
+            "output",
+            "0x1"
+          ]
         ],
         "tx_hash": "0x8205b2b4cd6380d7e332c7a5b49bf776a0322ba19f46dc6ca1f8c59f7daee08d",
         "tx_index": "0x1"
       },
       {
         "block_number": "0x5b0e6d",
-        "cells": [["output", "0x0"]],
+        "cells": [
+          [
+            "output",
+            "0x0"
+          ]
+        ],
         "tx_hash": "0xe8f2180dfba0cb15b45f771d520834515a5f8d7aa07f88894da88c22629b79e9",
         "tx_index": "0x1"
       },
       {
         "block_number": "0x5b0e90",
-        "cells": [["output", "0x0"]],
+        "cells": [
+          [
+            "output",
+            "0x0"
+          ]
+        ],
         "tx_hash": "0xece3a27409bde2914fb7a1555d6bfca453ee46af73e665149ef549fd46ec1fc6",
         "tx_index": "0x1"
       },
       {
         "block_number": "0x5b0ead",
         "cells": [
-          ["input", "0x0"],
-          ["output", "0x1"]
+          [
+            "input",
+            "0x0"
+          ],
+          [
+            "output",
+            "0x1"
+          ]
         ],
         "tx_hash": "0x5c48768f91e3795b418c53211c76fd038c464a24c4aa7e35bbbb6ac5b219f581",
         "tx_index": "0x1"
       },
       {
         "block_number": "0x5b0eeb",
-        "cells": [["output", "0x0"]],
+        "cells": [
+          [
+            "output",
+            "0x0"
+          ]
+        ],
         "tx_hash": "0x90e6981d6a5692d92e54344dc0e12d213447710fa069cc19ddea874619b9ba48",
         "tx_index": "0x1"
       },
       {
         "block_number": "0x5b0f8c",
-        "cells": [["output", "0x0"]],
+        "cells": [
+          [
+            "output",
+            "0x0"
+          ]
+        ],
         "tx_hash": "0x9ea14510219ae97afa0275215fa77c3c015905281c953a3917a7fd036767429c",
         "tx_index": "0x1"
       },
       {
         "block_number": "0x5b5638",
         "cells": [
-          ["input", "0x0"],
-          ["input", "0x1"],
-          ["output", "0x1"],
-          ["input", "0x2"]
+          [
+            "input",
+            "0x0"
+          ],
+          [
+            "input",
+            "0x1"
+          ],
+          [
+            "output",
+            "0x1"
+          ],
+          [
+            "input",
+            "0x2"
+          ]
         ],
         "tx_hash": "0x9346da4caa846cc035c182ecad0c17326a587983d25fb1e12a388f1a9c5c56b4",
         "tx_index": "0x1"
@@ -776,8 +819,14 @@ http://localhost:8116
       {
         "block_number": "0x5b59c2",
         "cells": [
-          ["input", "0x0"],
-          ["output", "0x1"]
+          [
+            "input",
+            "0x0"
+          ],
+          [
+            "output",
+            "0x1"
+          ]
         ],
         "tx_hash": "0x5b58f90fb3309333bf0bec878f3a05038c7fe816747300ecdac37a9da76c4128",
         "tx_index": "0x1"
@@ -785,9 +834,18 @@ http://localhost:8116
       {
         "block_number": "0x5b59cc",
         "cells": [
-          ["input", "0x0"],
-          ["input", "0x1"],
-          ["output", "0x1"]
+          [
+            "input",
+            "0x0"
+          ],
+          [
+            "input",
+            "0x1"
+          ],
+          [
+            "output",
+            "0x1"
+          ]
         ],
         "tx_hash": "0x57ca2822c28e02b199424a731b2efd2c9bf752f07b7309f555f2e71abe83ba26",
         "tx_index": "0x1"
@@ -795,8 +853,14 @@ http://localhost:8116
       {
         "block_number": "0x5b59df",
         "cells": [
-          ["input", "0x0"],
-          ["output", "0x1"]
+          [
+            "input",
+            "0x0"
+          ],
+          [
+            "output",
+            "0x1"
+          ]
         ],
         "tx_hash": "0x21c4632a41140b828e9347ff80480b3e07be4e0a0b8d577565e7421fd5473194",
         "tx_index": "0x1"
