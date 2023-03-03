@@ -93,7 +93,7 @@ Returns the live cells collection by the lock or type script.
 
     search_key:
         script - Script, supports prefix search
-        scrip_type - enum, lock | type
+        script_type - enum, lock | type
         script_search_mode - enum, prefix | exact, optional default is `prefix`, controls the search mode of script
         filter - filter cells by following conditions, all conditions are optional
             script: if search script type is lock, filter cells by type script prefix, and vice versa
@@ -105,7 +105,6 @@ Returns the live cells collection by the lock or type script.
     order: enum, asc | desc
     limit: result size limit
     after_cursor: pagination parameter, optional
-
 
 #### Returns
 
@@ -461,7 +460,7 @@ Returns the transactions collection by the lock or type script.
 
     search_key:
         script - Script, supports prefix search when group_by_transaction is false
-        scrip_type - enum, lock | type
+        script_type - enum, lock | type
         script_search_mode - enum, prefix | exact, optional default is `prefix`, controls the search mode of script
         filter - filter cells by following conditions, all conditions are optional
             script: if search script type is lock, filter cells by type script, and vice versa
@@ -470,7 +469,6 @@ Returns the transactions collection by the lock or type script.
     order: enum, asc | desc
     limit: result size limit
     after_cursor: pagination parameter, optional
-
 
 #### Returns
 
@@ -884,7 +882,7 @@ Returns the live cells capacity by the lock or type script.
 
     search_key:
         script - Script
-        scrip_type - enum, lock | type
+        script_type - enum, lock | type
         script_search_mode - enum, prefix | exact, optional default is `prefix`, controls the search mode of script
         filter - filter cells by following conditions, all conditions are optional
             script: if search script type is lock, filter cells by type script prefix, and vice versa
